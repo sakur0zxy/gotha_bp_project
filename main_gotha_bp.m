@@ -1,29 +1,16 @@
-function result = main_gotha_bp(userConfig)
-%MAIN_GOTHA_BP GOTCHA 间断采样 BP 成像主入口
-%
-% 用法：
-%   result = main_gotha_bp();
-%   result = main_gotha_bp(userConfig);
-%
+﻿function result = main_gotha_bp(userConfig)
+%MAIN_GOTHA_BP 运行 GOTCHA BP 成像主流程。
 % 输入：
-%   userConfig   可选，结构体。只需填写你要覆盖的配置字段。
-%
+%   userConfig  可选，用于覆盖默认配置的结构体。
 % 输出：
-%   result.image                 最终 BP 复图像
-%   result.outputFile            成像图输出文件
-%   result.config                实际生效配置
-%   result.interruptionInfo      间断采样统计信息
-%   result.meta                  运行元信息（含数据目录、输出目录等）
-%   result.pointAnalysis         点目标分析结果（若启用）
-%   result.pointAnalysisMeta     点目标分析元信息（参数来源等）
-%   result.pointAnalysisFiles    点目标分析输出文件路径
+%   result      包含成像结果、间断信息、点目标分析结果和输出路径。
 
 %% 加载项目路径
 projectRoot = fileparts(mfilename('fullpath'));
 addpath(fullfile(projectRoot, 'config'));
 addpath(fullfile(projectRoot, 'src'));
 
-%% 读取配置
+%% 读取并校验配置
 config = default_config();
 if nargin >= 1 && ~isempty(userConfig)
     config = bp_merge_config(config, userConfig);
@@ -97,7 +84,7 @@ end
 %% 保存成像图
 imageFile = bp_save_image_output(imageBP, config, runOutput.runDir);
 
-%% 打包结果
+%% 汇总结果
 result = struct();
 result.image = imageBP;
 result.outputFile = imageFile;
@@ -111,9 +98,9 @@ result.pointAnalysis = pointResult;
 result.pointAnalysisMeta = pointMeta;
 result.pointAnalysisFiles = pointFiles;
 if strcmp(cutInfo.mode, 'random_gap')
-    fprintf('random seed used: %.0f\n', cutInfo.randomSeedUsed);
+    fprintf('Random seed used: %.0f\n', cutInfo.randomSeedUsed);
 end
 
-fprintf('成像完成，运行输出目录：%s\n', runOutput.runDir);
+fprintf('运行输出目录：%s\n', runOutput.runDir);
 fprintf('成像图文件：%s\n', imageFile);
 end

@@ -1,7 +1,5 @@
-function [anaResult, anaInfo] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo)
-%BP_RUN_POINT_ANALYSIS 运行点目标分析脚本并整理输入参数
-%
-% point_analysis.m 仍是脚本式实现，这里负责准备脚本所需变量。
+﻿function [anaResult, anaInfo] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo)
+%BP_RUN_POINT_ANALYSIS 运行点目标分析脚本并整理输入参数。
 
 %% 定位分析脚本
 [scriptFile, scriptSource] = localResolvePointAnalysisScript(pathInfo);
@@ -57,7 +55,7 @@ if exist(legacyScript, 'file') == 2
     return;
 end
 
-error('未找到 point_analysis.m。已检查：%s 与 %s', projectScript, legacyScript);
+error('未找到 point_analysis.m。已检查：%s 和 %s', projectScript, legacyScript);
 end
 
 function value = localPickValue(manualValue, autoValue, defaultValue)
@@ -93,7 +91,7 @@ end
 end
 
 function prf = localEstimatePRF(track, platformSpeed)
-% 根据轨迹点平均间距估计 PRF
+% 根据轨迹点平均间距估计 PRF。
 
 x = track.X(:);
 y = track.Y(:);

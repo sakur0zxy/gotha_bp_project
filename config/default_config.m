@@ -1,23 +1,23 @@
-function config = default_config()
-%DEFAULT_CONFIG Default configuration for the GOTCHA BP project.
+﻿function config = default_config()
+%DEFAULT_CONFIG GOTCHA BP 项目的默认配置。
 
-%% General
+%% 基础设置
 config.general.useSinglePrecision = true;
 config.general.numDataFiles = 9;
 config.general.dataFilePattern = 'data_3dsar_pass1_az%03d_VV.mat';
 
-%% Radar
+%% 雷达参数
 config.radar.c = 3e8;
 config.radar.w0 = 2 * pi * 9.6e9;
 config.radar.tau = 1e-5;
 config.radar.rangeUpsampleFactor = 8;
 
-%% Image grid
+%% 成像网格
 config.image.numPixels = 512;
 config.image.xLimits = [-50, 50];
 config.image.yLimits = [-50, 50];
 
-%% Interruption
+%% 间断采样
 config.interruption.mode = 'random_gap';
 config.interruption.numSegments = 5;
 config.interruption.missingRatio = 0.07;
@@ -25,17 +25,17 @@ config.interruption.gapMinMeters = 0;
 config.interruption.gapMaxMeters = 50;
 config.interruption.randomSeed = [];
 
-%% Iteration weights
+%% 迭代权重
 config.iteration.J = 117 * 4;
 
-%% Display
+%% 显示控制
 config.display.showInterruptedEcho = true;
 config.display.showProgress = true;
 config.display.progressScale = 6;
 config.display.progressUpdateInterval = 20;
 config.display.outputScale = 7;
 
-%% Output
+%% 输出控制
 config.output.outputDirName = 'img';
 config.output.filePrefix = 'gotha';
 config.output.appendTimestamp = true;
@@ -49,10 +49,10 @@ config.output.savePointAnalysisImage = true;
 config.output.saveInterruptionText = true;
 config.output.saveInterruptionImage = true;
 
-%% Data paths
+%% 数据路径
 config.path.dataRootCandidates = {'.', 'gotcha_BP'};
 
-%% Point analysis
+%% 点目标分析
 config.analysis.enablePointAnalysis = true;
 config.analysis.failOnPointAnalysisError = false;
 config.analysis.physics.Br = [];
@@ -67,22 +67,5 @@ config.analysis.pointAnaCfg = struct( ...
     'showFigures', true, ...
     'enableTiltAlign', true, ...
     'tiltApplyThresholdDeg', 0.0, ...
-    'tiltRowPeakMinDb', -20, ...
-    'tiltRowFitMinRows', 6, ...
-    'tiltSearchCoarseStepDeg', 1.0, ...
-    'tiltSearchMidStepDeg', 0.1, ...
-    'tiltSearchFineStepDeg', 0.02, ...
-    'tiltSearchMidHalfRangeDeg', 1.0, ...
-    'tiltSearchFineHalfRangeDeg', 0.1, ...
-    'tiltEvalPatchSize', 41, ...
-    'tiltEvalDbFloor', -35, ...
-    'tiltOrientDbLow', -24, ...
-    'tiltOrientDbHigh', -6, ...
-    'tiltOrientGamma', 1.5, ...
-    'tiltPcaHalfRangeDeg', 8, ...
-    'tiltResidualRefineEnable', true, ...
-    'tiltResidualRefineThresholdDeg', 0.25, ...
-    'tiltResidualRefineGain', 0.7, ...
-    'tiltResidualRefineMaxStepDeg', 2.0, ...
-    'tiltResidualMinScoreGain', 1e-4);
+    'tiltEdgeFraction', 0.2);
 end

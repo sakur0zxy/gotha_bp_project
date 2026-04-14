@@ -1,9 +1,9 @@
-﻿%% Point target profile and sidelobe analysis
-% Required inputs in workspace:
+﻿%% 点目标剖面与旁瓣分析
+% 必需输入：
 %   imgBP, Br, Fr, PRF, vc, squintAngle, lambda
-% Optional input:
+% 可选输入：
 %   pointAnaCfg
-% Output:
+% 输出：
 %   pointAnaResult
 
 needVars = {'imgBP', 'Br', 'Fr', 'PRF', 'vc', 'squintAngle', 'lambda'};
@@ -26,8 +26,9 @@ prf = PRF;
 fd = 2 * v * sin(squintAngle) / lambda;
 rangeUnit = c / (2 * Fr);
 aziUnit = v / prf;
-analysisSource = 'upSlice (rotated-corrected)';
+analysisSource = 'rotated-corrected upsampled slice';
 
+% 在成像结果中截取峰值邻域。
 amp = abs(img);
 [~, idxMax] = max(amp(:));
 [cy, cx] = ind2sub(size(amp), idxMax);
@@ -43,8 +44,9 @@ if cfg.showFigures
     title('Target Cut');
 end
 
-[tiltDeg, tiltInfo] = localEstimateTilt(cut, cfg);
+% 主估角、主剖面和主指标统一基于旋转后的升采样图。
 up = localUpsampleFFT(cut, cfg.upN);
+[tiltDeg, tiltInfo] = localEstimateTilt(up, cfg);
 rotDeg = 0;
 refineDeltaDeg = 0;
 residualTiltDeg = NaN;
@@ -54,14 +56,17 @@ if cfg.enableTiltAlign && abs(tiltDeg) >= cfg.tiltApplyThresholdDeg
     rotDeg = -tiltDeg;
 end
 
-cutAligned = localRotateComplex(cut, rotDeg);
 upAligned = localRotateComplex(up, rotDeg);
 candidateRotationsDeg = rotDeg;
+candidateScores = NaN;
+candidateResidualsDeg = NaN;
 selectedCandidate = rotDeg;
 
 if cfg.enableTiltAlign
-    [residualTiltDeg, residualTiltInfo] = localEstimateTilt(cutAligned, cfg);
+    [residualTiltDeg, residualTiltInfo] = localEstimateTilt(upAligned, cfg);
     residualTiltInfo.used = 'residual-diagnostic';
+    residualTiltInfo.estimatedFrom = 'rotated-upsampled-slice';
+    residualTiltInfo.correctionAppliedTo = 'diagnostic-only';
 end
 
 tiltInfo.residualCheckDeg = residualTiltDeg;
@@ -134,6 +139,7 @@ pointAnaResult.analysisSource = analysisSource;
 pointAnaResult.range = localPackAxisResult(rangeProfile, mR, irwRTheory);
 pointAnaResult.azimuth = localPackAxisResult(aziProfile, mA, irwATheory);
 
+% raw 仅保留未矫正参考，不参与主结果判断。
 pointAnaResult.raw = struct();
 pointAnaResult.raw.range = localPackAxisResult(rangeProfileRaw, mRRaw, irwRTheory);
 pointAnaResult.raw.azimuth = localPackAxisResult(aziProfileRaw, mARaw, irwATheory);
@@ -178,44 +184,9 @@ cfg.cutH = 32;
 cfg.cutW = 32;
 cfg.upN = 16;
 cfg.showFigures = true;
-
 cfg.enableTiltAlign = true;
 cfg.tiltApplyThresholdDeg = 0.0;
-cfg.tiltRowPeakMinDb = -20;
-cfg.tiltRowFitMinRows = 6;
-cfg.tiltWindowRadius = 24;
-
-cfg.tiltMainlobeDb = -6;
-cfg.tiltSidelobeDbLow = -35;
-cfg.tiltSidelobeDbHigh = -8;
-cfg.tiltCenterExcludeRadius = 4;
-cfg.tiltMinMainPoints = 20;
-cfg.tiltMinSidePoints = 20;
-cfg.tiltUseSidelobeRefine = true;
-cfg.tiltSideSearchDeg = 20;
-cfg.tiltSideStepDeg = 0.2;
-cfg.tiltFuseDisagreeDeg = 4;
-cfg.tiltPcaWeightStrong = 0.8;
-cfg.tiltPcaWeightWeak = 0.6;
-cfg.tiltPcaWeightDisagree = 0.9;
-
-cfg.tiltSearchCoarseStepDeg = 1.0;
-cfg.tiltSearchMidStepDeg = 0.1;
-cfg.tiltSearchFineStepDeg = 0.02;
-cfg.tiltSearchMidHalfRangeDeg = 1.0;
-cfg.tiltSearchFineHalfRangeDeg = 0.1;
-cfg.tiltEvalPatchSize = 41;
-cfg.tiltEvalDbFloor = -35;
-cfg.tiltOrientDbLow = -24;
-cfg.tiltOrientDbHigh = -6;
-cfg.tiltOrientGamma = 1.5;
-cfg.tiltPcaHalfRangeDeg = 8;
-
-cfg.tiltResidualRefineEnable = true;
-cfg.tiltResidualRefineThresholdDeg = 0.25;
-cfg.tiltResidualRefineGain = 0.7;
-cfg.tiltResidualRefineMaxStepDeg = 2.0;
-cfg.tiltResidualMinScoreGain = 1e-4;
+cfg.tiltEdgeFraction = 0.2;
 end
 
 function cfg = localMergeStruct(cfg, userCfg)
@@ -235,50 +206,11 @@ function localCheckCfg(cfg)
 assert(cfg.cutH >= 8 && mod(cfg.cutH, 2) == 0, 'cutH must be an even integer >= 8.');
 assert(cfg.cutW >= 8 && mod(cfg.cutW, 2) == 0, 'cutW must be an even integer >= 8.');
 assert(cfg.upN >= 1 && mod(cfg.upN, 1) == 0, 'upN must be an integer >= 1.');
-assert(cfg.tiltWindowRadius >= 4, 'tiltWindowRadius is too small.');
 assert(cfg.tiltApplyThresholdDeg >= 0, 'tiltApplyThresholdDeg must be nonnegative.');
-assert(isnumeric(cfg.tiltRowPeakMinDb) && isscalar(cfg.tiltRowPeakMinDb) ...
-    && isfinite(cfg.tiltRowPeakMinDb) && cfg.tiltRowPeakMinDb <= 0, ...
-    'tiltRowPeakMinDb must be a finite scalar <= 0.');
-assert(isnumeric(cfg.tiltRowFitMinRows) && isscalar(cfg.tiltRowFitMinRows) ...
-    && cfg.tiltRowFitMinRows >= 2 && mod(cfg.tiltRowFitMinRows, 1) == 0, ...
-    'tiltRowFitMinRows must be an integer >= 2.');
-assert(cfg.tiltMainlobeDb < 0, 'tiltMainlobeDb must be less than 0 dB.');
-assert(cfg.tiltSidelobeDbLow < cfg.tiltSidelobeDbHigh, ...
-    'tiltSidelobeDbLow must be less than tiltSidelobeDbHigh.');
-assert(cfg.tiltCenterExcludeRadius >= 0, 'tiltCenterExcludeRadius must be nonnegative.');
-assert(cfg.tiltMinMainPoints >= 5, 'tiltMinMainPoints is too small.');
-assert(cfg.tiltMinSidePoints >= 5, 'tiltMinSidePoints is too small.');
-assert(cfg.tiltSideSearchDeg > 0, 'tiltSideSearchDeg must be greater than 0.');
-assert(cfg.tiltSideStepDeg > 0, 'tiltSideStepDeg must be greater than 0.');
-assert(cfg.tiltFuseDisagreeDeg >= 0, 'tiltFuseDisagreeDeg must be nonnegative.');
-assert(cfg.tiltPcaWeightStrong >= 0 && cfg.tiltPcaWeightStrong <= 1, ...
-    'tiltPcaWeightStrong must be in [0, 1].');
-assert(cfg.tiltPcaWeightWeak >= 0 && cfg.tiltPcaWeightWeak <= 1, ...
-    'tiltPcaWeightWeak must be in [0, 1].');
-assert(cfg.tiltPcaWeightDisagree >= 0 && cfg.tiltPcaWeightDisagree <= 1, ...
-    'tiltPcaWeightDisagree must be in [0, 1].');
-assert(cfg.tiltSearchCoarseStepDeg > 0, 'tiltSearchCoarseStepDeg must be greater than 0.');
-assert(cfg.tiltSearchMidStepDeg > 0, 'tiltSearchMidStepDeg must be greater than 0.');
-assert(cfg.tiltSearchFineStepDeg > 0, 'tiltSearchFineStepDeg must be greater than 0.');
-assert(cfg.tiltSearchMidHalfRangeDeg > 0, 'tiltSearchMidHalfRangeDeg must be greater than 0.');
-assert(cfg.tiltSearchFineHalfRangeDeg > 0, 'tiltSearchFineHalfRangeDeg must be greater than 0.');
-assert(cfg.tiltEvalPatchSize >= 9 && mod(cfg.tiltEvalPatchSize, 2) == 1, ...
-    'tiltEvalPatchSize must be an odd integer >= 9.');
-assert(cfg.tiltEvalDbFloor < 0, 'tiltEvalDbFloor must be less than 0 dB.');
-assert(cfg.tiltOrientDbLow < cfg.tiltOrientDbHigh, ...
-    'tiltOrientDbLow must be less than tiltOrientDbHigh.');
-assert(cfg.tiltOrientGamma > 0, 'tiltOrientGamma must be greater than 0.');
-assert(cfg.tiltPcaHalfRangeDeg > 0 && cfg.tiltPcaHalfRangeDeg <= 45, ...
-    'tiltPcaHalfRangeDeg must be in (0, 45].');
-assert(cfg.tiltResidualRefineThresholdDeg >= 0, ...
-    'tiltResidualRefineThresholdDeg must be nonnegative.');
-assert(cfg.tiltResidualRefineGain > 0 && cfg.tiltResidualRefineGain <= 1, ...
-    'tiltResidualRefineGain must be in (0, 1].');
-assert(cfg.tiltResidualRefineMaxStepDeg > 0, ...
-    'tiltResidualRefineMaxStepDeg must be greater than 0.');
-assert(cfg.tiltResidualMinScoreGain >= 0, ...
-    'tiltResidualMinScoreGain must be nonnegative.');
+assert(isnumeric(cfg.tiltEdgeFraction) && isscalar(cfg.tiltEdgeFraction) ...
+    && isfinite(cfg.tiltEdgeFraction) && cfg.tiltEdgeFraction > 0 ...
+    && cfg.tiltEdgeFraction < 0.5, ...
+    'tiltEdgeFraction must be a finite scalar in (0, 0.5).');
 end
 
 function patch = localExtractPatch(img, cy, cx, h, w)
@@ -324,9 +256,9 @@ if nargin < 3
 end
 
 info = struct();
-info.method = 'raw-row-peak-fit';
-info.used = 'raw-row-peak-fit';
-info.estimatedFrom = 'raw-cut';
+info.method = 'upsampled-column-peak-edge-fit';
+info.used = 'upsampled-column-peak-edge-fit';
+info.estimatedFrom = 'upsampled-slice';
 info.correctionAppliedTo = 'upsampled-slice';
 info.mainPoints = 0;
 info.sidePoints = 0;
@@ -354,7 +286,13 @@ info.rowPeakDb = [];
 info.validRowMask = [];
 info.validRowIndices = [];
 info.validRowCount = 0;
-info.fitSlopePxPerRow = NaN;
+info.colPeakRows = [];
+info.colPeakAmp = [];
+info.usedColumnMask = [];
+info.usedColumnIndices = [];
+info.usedColumnCount = 0;
+info.edgeFraction = cfg.tiltEdgeFraction;
+info.fitSlopePxPerCol = NaN;
 info.fitInterceptPx = NaN;
 info.fitRmsePx = NaN;
 info.lowConfidence = false;
@@ -367,112 +305,91 @@ if isempty(amp)
     return;
 end
 
-[rowPeakAmp, rowPeakCols] = max(amp, [], 2);
-rowPeakAmp = rowPeakAmp(:);
-rowPeakCols = rowPeakCols(:);
-peakRef = max(rowPeakAmp);
+[colPeakAmp, colPeakRows] = max(amp, [], 1);
+colPeakAmp = colPeakAmp(:);
+colPeakRows = colPeakRows(:);
+info.colPeakRows = colPeakRows;
+info.colPeakAmp = colPeakAmp;
 
-info.rowPeakCols = rowPeakCols;
-info.rowPeakAmp = rowPeakAmp;
-
-if peakRef <= 0
+if max(colPeakAmp) <= 0
     ang = 0;
     info.used = 'zero-image';
-    info.rowPeakDb = -Inf(size(rowPeakAmp));
-    info.validRowMask = false(size(rowPeakAmp));
     info.lowConfidence = true;
     return;
 end
 
-rowPeakDb = 20 * log10(rowPeakAmp / peakRef + eps);
-[validMask, validRows, selectMode] = localSelectTiltRows(rowPeakAmp, rowPeakDb, cfg);
+[usedMask, usedCols, selectMode] = localSelectTiltColumns(size(img, 2), cfg.tiltEdgeFraction);
+info.usedColumnMask = usedMask;
+info.usedColumnIndices = usedCols;
+info.usedColumnCount = numel(usedCols);
+info.mainPoints = numel(usedCols);
+info.orientationPoints = numel(usedCols);
 
-info.rowPeakDb = rowPeakDb;
-info.validRowMask = validMask;
-info.validRowIndices = validRows;
-info.validRowCount = numel(validRows);
-info.mainPoints = numel(validRows);
-info.orientationPoints = numel(validRows);
-
-if strcmp(selectMode, 'top-rows-fallback')
-    info.used = 'raw-row-peak-fit+top-rows-fallback';
-    info.lowConfidence = true;
-elseif strcmp(selectMode, 'insufficient-rows')
+if strcmp(selectMode, 'insufficient-columns')
     ang = 0;
-    info.used = 'raw-row-peak-fit+insufficient-rows';
+    info.used = 'upsampled-column-peak-edge-fit+insufficient-columns';
     info.lowConfidence = true;
     return;
 end
 
-rowCoord = (1:size(img, 1)).';
-y = rowCoord(validRows) - (size(img, 1) + 1) / 2;
-x = rowPeakCols(validRows) - (size(img, 2) + 1) / 2;
-weights = rowPeakAmp(validRows);
-weights = weights / max(weights);
+y = colPeakRows(usedCols) - (size(img, 1) + 1) / 2;
+x = usedCols(:) - (size(img, 2) + 1) / 2;
 
-[fitSlope, fitIntercept, fitRmse] = localWeightedLineFit(y, x, weights);
+[fitSlope, fitIntercept, fitRmse] = localLineFit(x, y);
 if ~isfinite(fitSlope)
     ang = 0;
-    info.used = 'raw-row-peak-fit+invalid-fit';
+    info.used = 'upsampled-column-peak-edge-fit+invalid-fit';
     info.lowConfidence = true;
     return;
 end
 
-ang = localToRangeAxisAngle(-atan2d(fitSlope, 1));
-info.fitSlopePxPerRow = fitSlope;
+ang = localToRangeAxisAngle(atan2d(fitSlope, 1));
+info.fitSlopePxPerCol = fitSlope;
 info.fitInterceptPx = fitIntercept;
 info.fitRmsePx = fitRmse;
 info.fineAngleDeg = ang;
 end
 
-function [validMask, validRows, selectMode] = localSelectTiltRows(rowPeakAmp, rowPeakDb, cfg)
-numRows = numel(rowPeakAmp);
-finiteMask = isfinite(rowPeakAmp) & isfinite(rowPeakDb);
-validMask = finiteMask & (rowPeakDb >= cfg.tiltRowPeakMinDb);
-selectMode = 'threshold';
+function [usedMask, usedCols, selectMode] = localSelectTiltColumns(numCols, edgeFraction)
+usedMask = false(numCols, 1);
+usedCols = [];
+selectMode = 'edge-columns';
 
-if nnz(validMask) < cfg.tiltRowFitMinRows
-    keepCount = min(numRows, max(cfg.tiltRowFitMinRows, 2));
-    validMask = false(numRows, 1);
-    finiteRows = find(finiteMask);
-    if numel(finiteRows) >= 2
-        [~, order] = sort(rowPeakAmp(finiteRows), 'descend');
-        chosen = finiteRows(order(1:min(keepCount, numel(finiteRows))));
-        validMask(chosen) = true;
-        selectMode = 'top-rows-fallback';
-    else
-        selectMode = 'insufficient-rows';
-    end
+if numCols < 2
+    selectMode = 'insufficient-columns';
+    return;
 end
 
-validRows = find(validMask);
-if numel(validRows) < 2
-    validMask(:) = false;
-    validRows = [];
-    selectMode = 'insufficient-rows';
+edgeCount = ceil(numCols * edgeFraction);
+edgeCount = max(edgeCount, 1);
+edgeCount = min(edgeCount, floor(numCols / 2));
+if edgeCount < 1
+    selectMode = 'insufficient-columns';
+    return;
+end
+
+% 只用左右边缘列拟合倾角，中间列不参与。
+usedMask(1:edgeCount) = true;
+usedMask(end-edgeCount+1:end) = true;
+usedCols = find(usedMask);
+if numel(usedCols) < 2
+    usedMask(:) = false;
+    usedCols = [];
+    selectMode = 'insufficient-columns';
 end
 end
 
-function [slope, intercept, rmse] = localWeightedLineFit(y, x, weights)
+function [slope, intercept, rmse] = localLineFit(x, y)
 slope = NaN;
 intercept = NaN;
 rmse = NaN;
 
-if numel(y) < 2 || numel(x) ~= numel(y)
+if numel(x) < 2 || numel(y) ~= numel(x)
     return;
 end
 
-w = weights(:);
-w(~isfinite(w) | w < 0) = 0;
-if ~any(w > 0)
-    w = ones(size(y));
-end
-
-A = [y(:), ones(numel(y), 1)];
-sqrtW = sqrt(w(:));
-Aw = A .* sqrtW;
-xw = x(:) .* sqrtW;
-coef = Aw \ xw;
+A = [x(:), ones(numel(x), 1)];
+coef = A \ y(:);
 
 if numel(coef) ~= 2 || any(~isfinite(coef))
     return;
@@ -480,8 +397,8 @@ end
 
 slope = coef(1);
 intercept = coef(2);
-fitErr = A * coef - x(:);
-rmse = sqrt(sum(w .* (fitErr .^ 2)) / (sum(w) + eps));
+fitErr = A * coef - y(:);
+rmse = sqrt(mean(fitErr .^ 2));
 end
 
 function out = localRotateComplex(img, angDeg)
@@ -708,6 +625,3 @@ elseif a <= -45
     a = a + 90;
 end
 end
-
-
-
