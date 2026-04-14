@@ -1,6 +1,109 @@
-function savedFile = bp_save_point_analysis_output(anaResult, anaInfo, config, runDir)
-%BP_SAVE_POINT_ANALYSIS_OUTPUT 保存点目标分析结果文件
+﻿function varargout = bp_output_pipeline(action, varargin)
+%BP_OUTPUT_PIPELINE 统一处理输出目录、图片和摘要文件保存。
+% 用法：
+%   runOutput = bp_output_pipeline('prepare_run_dir', config, pathInfo, cutInfo)
+%   files = bp_output_pipeline('save_interruption', cutInfo, config, runDir)
+%   imageFile = bp_output_pipeline('save_image', imageBP, config, runDir)
+%   files = bp_output_pipeline('save_point_analysis', anaResult, anaInfo, config, runDir)
 
+switch action
+    case 'prepare_run_dir'
+        varargout{1} = localPrepareRunDir(varargin{:});
+    case 'save_interruption'
+        varargout{1} = localSaveInterruption(varargin{:});
+    case 'save_image'
+        varargout{1} = localSaveImage(varargin{:});
+    case 'save_point_analysis'
+        varargout{1} = localSavePointAnalysis(varargin{:});
+    otherwise
+        error('bp_output_pipeline:UnsupportedAction', '不支持的输出动作：%s', action);
+end
+end
+
+function runOutput = localPrepareRunDir(cfg, context, cutInfo)
+baseDir = fullfile(context.workspaceRoot, cfg.output.outputDirName);
+if exist(baseDir, 'dir') ~= 7
+    mkdir(baseDir);
+end
+
+if cfg.output.separateRunFolder
+    timeStamp = datetime('now', 'Format', cfg.output.runFolderTimestampFormat);
+    runName = sprintf('%s_%s', cfg.output.runFolderPrefix, char(timeStamp));
+    if strcmp(char(string(cutInfo.mode)), 'random_gap') && ~isempty(cutInfo.randomSeedUsed)
+        runName = sprintf('%s_seed%.0f', runName, cutInfo.randomSeedUsed);
+    end
+else
+    runName = '';
+end
+
+if isempty(runName)
+    runDir = baseDir;
+else
+    runDir = fullfile(baseDir, runName);
+    suffix = 1;
+    while exist(runDir, 'dir') == 7
+        runDir = fullfile(baseDir, sprintf('%s_%02d', runName, suffix));
+        suffix = suffix + 1;
+    end
+    mkdir(runDir);
+    [~, runName] = fileparts(runDir);
+end
+
+runOutput = struct();
+runOutput.baseDir = baseDir;
+runOutput.runDir = runDir;
+runOutput.runName = runName;
+end
+
+function savedFile = localSaveInterruption(cutInfo, config, runDir)
+savedFile = struct('textFile', '', 'imageFile', '');
+
+if exist(runDir, 'dir') ~= 7
+    mkdir(runDir);
+end
+
+if localShouldSave(config, 'saveInterruptionText', true)
+    textFile = fullfile(runDir, 'interruption_summary.txt');
+    localWriteInterruptionSummary(textFile, cutInfo);
+    savedFile.textFile = textFile;
+end
+
+if localShouldSave(config, 'saveInterruptionImage', true)
+    imageFile = fullfile(runDir, 'interruption_layout.jpg');
+    layoutImage = localBuildLayoutImage(cutInfo);
+    imwrite(layoutImage, imageFile, 'jpg');
+    savedFile.imageFile = imageFile;
+end
+end
+
+function outputFile = localSaveImage(imgBP, cfg, outputDir)
+if exist(outputDir, 'dir') ~= 7
+    mkdir(outputDir);
+end
+
+baseName = sprintf('%s_%s_%d_%g', ...
+    cfg.output.filePrefix, ...
+    cfg.interruption.mode, ...
+    cfg.interruption.numSegments, ...
+    cfg.interruption.missingRatio);
+
+if cfg.output.appendTimestamp
+    timeStamp = datetime('now', 'Format', cfg.output.timestampFormat);
+    fileName = sprintf('%s_%s.jpg', baseName, char(timeStamp));
+else
+    fileName = sprintf('%s.jpg', baseName);
+end
+
+outputFile = fullfile(outputDir, fileName);
+outputImage = abs(imgBP);
+outputScale = mean(outputImage(:));
+if outputScale > 0
+    outputImage = outputImage / (outputScale * cfg.display.outputScale);
+end
+imwrite(outputImage, outputFile, 'jpg');
+end
+
+function savedFile = localSavePointAnalysis(anaResult, anaInfo, config, runDir)
 savedFile = struct( ...
     'matFile', '', ...
     'textFile', '', ...
@@ -15,7 +118,6 @@ if exist(runDir, 'dir') ~= 7
     mkdir(runDir);
 end
 
-%% 保存 MAT
 if config.output.savePointAnalysisMat
     matFile = fullfile(runDir, 'point_analysis_result.mat');
     pointResult = anaResult; %#ok<NASGU>
@@ -24,14 +126,12 @@ if config.output.savePointAnalysisMat
     savedFile.matFile = matFile;
 end
 
-%% 保存文本摘要
 if config.output.savePointAnalysisText
     txtFile = fullfile(runDir, 'point_analysis_summary.txt');
-    localWriteSummary(txtFile, anaResult, anaInfo);
+    localWritePointSummary(txtFile, anaResult, anaInfo);
     savedFile.textFile = txtFile;
 end
 
-%% 保存上采样图
 if localShouldSavePointImages(config) ...
         && isstruct(anaResult) ...
         && isfield(anaResult, 'upSlice') ...
@@ -39,6 +139,90 @@ if localShouldSavePointImages(config) ...
     savedFile.imageFiles = localSavePointImages(runDir, anaResult);
     savedFile.imageFile = savedFile.imageFiles.upslice;
 end
+end
+
+function tf = localShouldSave(config, fieldName, defaultValue)
+tf = defaultValue;
+if isstruct(config) && isfield(config, 'output') ...
+        && isstruct(config.output) && isfield(config.output, fieldName)
+    tf = config.output.(fieldName);
+end
+end
+
+function localWriteInterruptionSummary(filePath, cutInfo)
+fid = fopen(filePath, 'w');
+if fid < 0
+    error('无法写入文件：%s', filePath);
+end
+closeGuard = onCleanup(@() fclose(fid)); %#ok<NASGU>
+
+fprintf(fid, 'Interruption Summary\n');
+fprintf(fid, '====================\n\n');
+fprintf(fid, 'mode = %s\n', localToText(cutInfo.mode));
+fprintf(fid, 'numAzSamples = %d\n', cutInfo.numAzSamples);
+fprintf(fid, 'numSegments = %d\n', cutInfo.numSegments);
+fprintf(fid, 'missingRatio = %.9g\n', cutInfo.missingRatio);
+fprintf(fid, 'totalMissingSamples = %d\n', cutInfo.totalMissingSamples);
+fprintf(fid, 'totalValidSamples = %d\n', cutInfo.totalValidSamples);
+fprintf(fid, 'meanAzimuthStep_m = %.9g\n', cutInfo.meanAzimuthStep_m);
+
+if strcmp(cutInfo.mode, 'random_gap')
+    fprintf(fid, 'randomSeedUsed = %.0f\n', cutInfo.randomSeedUsed);
+else
+    fprintf(fid, 'randomSeedUsed = <not-applicable>\n');
+end
+
+fprintf(fid, '\n[Segments]\n');
+for idx = 1:numel(cutInfo.segmentStartIndices)
+    fprintf(fid, 'segment%02d = %d:%d (%d samples)\n', ...
+        idx, ...
+        cutInfo.segmentStartIndices(idx), ...
+        cutInfo.segmentEndIndices(idx), ...
+        cutInfo.segmentLengthsSamples(idx));
+end
+
+fprintf(fid, '\n[Gaps]\n');
+validGapMask = cutInfo.gapLengthsSamples > 0;
+if ~any(validGapMask)
+    fprintf(fid, 'none\n');
+else
+    validGapIdx = find(validGapMask);
+    for listIdx = 1:numel(validGapIdx)
+        gapIdx = validGapIdx(listIdx);
+        fprintf(fid, 'gap%02d = %d:%d (%d samples, %.6f m)\n', ...
+            listIdx, ...
+            cutInfo.gapStartIndices(gapIdx), ...
+            cutInfo.gapEndIndices(gapIdx), ...
+            cutInfo.gapLengthsSamples(gapIdx), ...
+            cutInfo.gapLengthsMeters(gapIdx));
+    end
+end
+end
+
+function layoutImage = localBuildLayoutImage(cutInfo)
+numAzSamples = cutInfo.numAzSamples;
+mask = false(1, numAzSamples);
+mask(cutInfo.activeAzIndices) = true;
+
+imageHeight = 80;
+gapColor = uint8([220, 83, 83]);
+keepColor = uint8([45, 166, 111]);
+layoutImage = zeros(imageHeight, numAzSamples, 3, 'uint8');
+
+for channel = 1:3
+    colorRow = gapColor(channel) * ones(imageHeight, numAzSamples, 'uint8');
+    colorRow(:, mask) = keepColor(channel);
+    layoutImage(:, :, channel) = colorRow;
+end
+
+validGapMask = cutInfo.gapLengthsSamples > 0;
+boundaryIdx = unique([ ...
+    cutInfo.segmentStartIndices, ...
+    cutInfo.segmentEndIndices + 1, ...
+    cutInfo.gapStartIndices(validGapMask), ...
+    cutInfo.gapEndIndices(validGapMask) + 1]);
+boundaryIdx = boundaryIdx(boundaryIdx >= 1 & boundaryIdx <= numAzSamples);
+layoutImage(:, boundaryIdx, :) = 255;
 end
 
 function tf = localShouldSavePointImages(config)
@@ -108,7 +292,7 @@ title(figName);
 localExportFigure(fig, filePath);
 end
 
-function localWriteSummary(filePath, result, meta)
+function localWritePointSummary(filePath, result, meta)
 fid = fopen(filePath, 'w');
 if fid < 0
     error('无法写入文件：%s', filePath);
@@ -144,28 +328,6 @@ localWriteMetricSection(fid, 'Azimuth', localGetAxisResult(result, 'azimuth'));
 if isfield(result, 'raw') && isstruct(result.raw)
     localWriteMetricSection(fid, 'Raw Range Reference', localGetAxisResult(result.raw, 'range'));
     localWriteMetricSection(fid, 'Raw Azimuth Reference', localGetAxisResult(result.raw, 'azimuth'));
-end
-
-if isfield(result, 'rotated') && isstruct(result.rotated) ...
-        && isfield(result.rotated, 'enabled') && result.rotated.enabled
-    rot = result.rotated;
-    fprintf(fid, '[Rotated]\n');
-    localWriteField(fid, rot, 'rangeLikeAngleDeg', '%.6f');
-    localWriteField(fid, rot, 'azimuthLikeAngleDeg', '%.6f');
-
-    if isfield(rot, 'rangeLikeMetrics')
-        m = rot.rangeLikeMetrics;
-        fprintf(fid, 'rangeLike.PSLR_dB = %.6f\n', m.PSLR_dB);
-        fprintf(fid, 'rangeLike.ISLR_dB = %.6f\n', m.ISLR_dB);
-        fprintf(fid, 'rangeLike.IRW_m   = %.6f\n', m.IRW_m);
-    end
-    if isfield(rot, 'azimuthLikeMetrics')
-        m = rot.azimuthLikeMetrics;
-        fprintf(fid, 'azLike.PSLR_dB = %.6f\n', m.PSLR_dB);
-        fprintf(fid, 'azLike.ISLR_dB = %.6f\n', m.ISLR_dB);
-        fprintf(fid, 'azLike.IRW_m   = %.6f\n', m.IRW_m);
-    end
-    fprintf(fid, '\n');
 end
 end
 
@@ -236,8 +398,7 @@ warnCleanup = onCleanup(@() warning(warnState)); %#ok<NASGU>
 warning('off', 'all');
 exportgraphics(fig, filePath, 'Resolution', 200);
 if exist(filePath, 'file') ~= 2
-    error('bp_save_point_analysis_output:ExportFailed', ...
-        '未能导出点目标分析图片：%s', filePath);
+    error('bp_output_pipeline:ExportFailed', '未能导出图片：%s', filePath);
 end
 end
 
@@ -247,12 +408,13 @@ if isfield(s, fieldName)
 end
 end
 
-function txt = localToText(v)
-if ischar(v)
-    txt = v;
-elseif isstring(v)
-    txt = char(v);
+function txt = localToText(value)
+if ischar(value)
+    txt = value;
+elseif isstring(value)
+    txt = char(value);
 else
-    txt = char(string(v));
+    txt = char(string(value));
 end
 end
+

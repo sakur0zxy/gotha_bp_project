@@ -12,6 +12,8 @@
 - 项目主函数：`gotha_bp_project/main_gotha_bp.m`
 - 工具函数：`gotha_bp_project/src/bp_read_seed_from_run_dir.m`
 
+项目运行时只会把 `gotha_bp_project`、`config` 和 `src` 加入 MATLAB 路径。`gotcha_BP` 仅作为默认数据目录候选，不再作为代码搜索路径；`常用` 目录也不再参与回退调用。
+
 ## 目录结构
 ```text
 matlab_gocha_分布式SAR成像/
@@ -24,15 +26,12 @@ matlab_gocha_分布式SAR成像/
    ├─ config/
    │  └─ default_config.m
    └─ src/
+      ├─ bp_data_pipeline.m
+      ├─ bp_interruption_pipeline.m
+      ├─ bp_imaging_pipeline.m
+      ├─ bp_output_pipeline.m
       ├─ bp_read_seed_from_run_dir.m
-      ├─ bp_apply_interruption.m
-      ├─ bp_load_data.m
-      ├─ bp_prepare_run_output_dir.m
-      ├─ bp_run_imaging.m
       ├─ bp_run_point_analysis.m
-      ├─ bp_save_image_output.m
-      ├─ bp_save_interruption_output.m
-      ├─ bp_save_point_analysis_output.m
       └─ point_analysis.m
 ```
 
@@ -52,6 +51,10 @@ result = main_gotha_bp();
 
 ## 关键配置
 默认配置集中在 `gotha_bp_project/config/default_config.m`。
+
+### 数据目录
+- `config.path.dataRootCandidates`：数据根目录候选，默认会依次检查 `.` 和 `gotcha_BP`
+- `gotcha_BP` 当前只承担数据目录角色，不要求把其中的 `.m` 文件加入路径
 
 ### 间断采样
 - `mode`：`tail_gap` 或 `random_gap`
@@ -99,7 +102,7 @@ result = main_gotha_bp(userCfg);
 ```
 
 ## 点目标分析与旋转矫正
-点目标分析脚本位于 `gotha_bp_project/src/point_analysis.m`，默认在成像后自动执行。
+点目标分析函数位于 `gotha_bp_project/src/point_analysis.m`，默认在成像后自动执行。
 
 当前角度矫正流程：
 

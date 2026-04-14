@@ -1,29 +1,19 @@
-﻿function [anaResult, anaInfo] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo)
-%BP_RUN_POINT_ANALYSIS 运行点目标分析脚本并整理输入参数。
+function [anaResult, anaInfo] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo)
+%BP_RUN_POINT_ANALYSIS 组织点目标分析输入并调用分析函数。
 
-%% 定位分析脚本
-[scriptFile, scriptSource] = localResolvePointAnalysisScript(pathInfo);
+[scriptFile, scriptSource] = localResolvePointAnalysisFile(pathInfo);
 
-%% 组装脚本输入
-imgBP = imageBP; %#ok<NASGU>
-
-Br = localPickValue(config.analysis.physics.Br, radar.bandwidthHz, NaN); %#ok<NASGU>
-Fr = localPickValue(config.analysis.physics.Fr, radar.bandwidthHz, NaN); %#ok<NASGU>
-
-vc = config.analysis.physics.vc; %#ok<NASGU>
-PRF = []; %#ok<NASGU>
+Br = localPickValue(config.analysis.physics.Br, radar.bandwidthHz, NaN);
+Fr = localPickValue(config.analysis.physics.Fr, radar.bandwidthHz, NaN);
+vc = config.analysis.physics.vc;
 [PRF, prfSource] = localResolvePRF(config.analysis, track, vc);
-squintAngle = deg2rad(config.analysis.physics.squintAngleDeg); %#ok<NASGU>
-lambda = localResolveLambda(config.analysis.physics.lambda, radar); %#ok<NASGU>
-pointAnaCfg = config.analysis.pointAnaCfg; %#ok<NASGU>
+squintAngle = deg2rad(config.analysis.physics.squintAngleDeg);
+lambda = localResolveLambda(config.analysis.physics.lambda, radar);
+pointAnaCfg = config.analysis.pointAnaCfg;
 
-%% 执行脚本
-run(scriptFile);
-assert(exist('pointAnaResult', 'var') == 1, ...
-    'point_analysis 运行后未生成 pointAnaResult。');
-anaResult = pointAnaResult;
+anaResult = localCallPointAnalysis( ...
+    scriptFile, imageBP, Br, Fr, PRF, vc, squintAngle, lambda, pointAnaCfg);
 
-%% 返回参数元信息
 anaInfo = struct();
 anaInfo.scriptPath = scriptFile;
 anaInfo.Br_Hz = Br;
@@ -37,9 +27,18 @@ anaInfo.bandwidthFromData_Hz = radar.bandwidthHz;
 anaInfo.scriptSource = scriptSource;
 end
 
-function [scriptFile, scriptSource] = localResolvePointAnalysisScript(pathInfo)
+function anaResult = localCallPointAnalysis(scriptFile, imageBP, Br, Fr, PRF, vc, squintAngle, lambda, pointAnaCfg)
+scriptDir = fileparts(scriptFile);
+originalPath = path;
+cleanup = onCleanup(@() path(originalPath)); %#ok<NASGU>
+addpath(scriptDir, '-begin');
+
+pointAnaFunc = str2func('point_analysis');
+anaResult = pointAnaFunc(imageBP, Br, Fr, PRF, vc, squintAngle, lambda, pointAnaCfg);
+end
+
+function [scriptFile, scriptSource] = localResolvePointAnalysisFile(pathInfo)
 projectScript = fullfile(pathInfo.srcRoot, 'point_analysis.m');
-legacyScript = fullfile(pathInfo.commonDir, 'point_analysis.m');
 
 if exist(projectScript, 'file') == 2
     scriptFile = projectScript;
@@ -47,15 +46,7 @@ if exist(projectScript, 'file') == 2
     return;
 end
 
-if exist(legacyScript, 'file') == 2
-    scriptFile = legacyScript;
-    scriptSource = 'legacy-common';
-    warning('bp_run_point_analysis:UsingLegacyScript', ...
-        '未找到项目内 point_analysis.m，回退到常用目录版本：%s', scriptFile);
-    return;
-end
-
-error('未找到 point_analysis.m。已检查：%s 和 %s', projectScript, legacyScript);
+error('未找到项目内 point_analysis.m：%s', projectScript);
 end
 
 function value = localPickValue(manualValue, autoValue, defaultValue)
@@ -91,8 +82,6 @@ end
 end
 
 function prf = localEstimatePRF(track, platformSpeed)
-% 根据轨迹点平均间距估计 PRF。
-
 x = track.X(:);
 y = track.Y(:);
 z = track.Z(:);

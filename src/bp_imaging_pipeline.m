@@ -1,20 +1,27 @@
-function [imageBP, info] = bp_run_imaging(track, echoData, radar, iterWeight, config, cutInfo)
-%BP_RUN_IMAGING BP 成像核心
+function [imageBP, info] = bp_imaging_pipeline(track, echoData, radar, config, cutInfo)
+%BP_IMAGING_PIPELINE 执行 BP 成像并返回成像元信息。
+% 输入：
+%   track     轨迹数据。
+%   echoData  间断后的回波矩阵。
+%   radar     雷达参数。
+%   config    运行配置。
+%   cutInfo   间断采样信息。
+% 输出：
+%   imageBP   成像结果。
+%   info      成像元信息。
 
-%% 构建成像网格
-numType = bp_get_numeric_class(config.general.useSinglePrecision);
+numType = localGetNumericClass(config.general.useSinglePrecision);
+iterWeight = localCreateIterationWeights(config.iteration.J, numType);
 imgSize = config.image.numPixels;
 
 xAxis = linspace(config.image.xLimits(1), config.image.xLimits(2), imgSize);
 yAxis = linspace(config.image.yLimits(1), config.image.yLimits(2), imgSize);
 [gridX, gridY] = ndgrid(xAxis, yAxis);
 
-%% 构建窗函数
 activeAzIdx = cutInfo.activeAzIndices(:).';
 aziWindow = hamming(numel(activeAzIdx)).';
 rngWindow = hamming(radar.numRangeSamples);
 
-%% 统一数据精度
 trackX = cast(track.X, numType);
 trackY = cast(track.Y, numType);
 trackZ = cast(track.Z, numType);
@@ -27,16 +34,13 @@ rngWindow = cast(rngWindow, numType);
 c = cast(radar.c, numType);
 w0 = cast(radar.w0, numType);
 deltaR = cast(radar.deltaR, numType);
-
 phaseScale = cast(1i * 2, numType) * w0 / c;
 
-%% 初始化图像与历史项
 imageBP = complex(zeros(imgSize, imgSize, numType));
 imgHist1 = imageBP;
 imgHist2 = imageBP;
 imgHist3 = imageBP;
 
-%% 初始化过程显示
 showProgress = config.display.showProgress;
 progressStep = config.display.progressUpdateInterval;
 progressScale = config.display.progressScale;
@@ -52,14 +56,11 @@ if showProgress
     colormap jet;
 end
 
-%% 缓存循环常量
 numAz = cutInfo.numAzSamples;
 numRngUp = radar.numRangeSamplesUp;
 expectedUsedCount = numel(activeAzIdx);
 halfBin = numRngUp / 2;
 deltaRDouble = double(deltaR);
-
-%% BP 主循环
 usedCount = 0;
 
 for winIdx = 1:expectedUsedCount
@@ -109,7 +110,6 @@ for winIdx = 1:expectedUsedCount
     end
 end
 
-%% 返回统计信息
 info = struct();
 info.numericClass = numType;
 info.numPixels = imgSize;
@@ -117,4 +117,24 @@ info.numAzSamples = numAz;
 info.usedSamples = usedCount;
 info.numRangeSamples = radar.numRangeSamples;
 info.numRangeSamplesUp = radar.numRangeSamplesUp;
+end
+
+function numericClass = localGetNumericClass(useSinglePrecision)
+if useSinglePrecision
+    numericClass = 'single';
+else
+    numericClass = 'double';
+end
+end
+
+function iterWeights = localCreateIterationWeights(J, numericClass)
+lam = 1 - 2.8 / J;
+mi = pi / (2 * J / 3);
+ga = 1 - 3 / J;
+
+iterWeights = zeros(1, 3);
+iterWeights(1) = -(-lam * exp(-1i * mi) - lam * exp(1i * mi) - ga);
+iterWeights(2) = -(lam^2 + lam * ga * exp(-1i * mi) + lam * ga * exp(1i * mi));
+iterWeights(3) = (lam^2) * ga;
+iterWeights = cast(iterWeights, numericClass);
 end

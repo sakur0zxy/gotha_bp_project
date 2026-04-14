@@ -22,20 +22,13 @@ end
 if ~isfield(config.output, 'saveInterruptionImage')
     config.output.saveInterruptionImage = true;
 end
-if strcmp(char(string(config.interruption.mode)), 'random_gap')
-    config.interruption.randomSeed = bp_resolve_random_seed(config.interruption.randomSeed);
-end
-
-%% 初始化路径与输出目录
-pathInfo = bp_setup_paths();
-runOutput = bp_prepare_run_output_dir(config, pathInfo);
-
-%% 读取数据
-[track, echoData, radar, dataRoot] = bp_load_data(config, pathInfo);
+%% 读取路径和数据
+[pathInfo, track, echoData, radar, dataRoot] = bp_data_pipeline(config);
 
 %% 生成间断采样回波
-[echoCut, cutInfo] = bp_apply_interruption(echoData, track, config.interruption);
-interruptionFiles = bp_save_interruption_output(cutInfo, config, runOutput.runDir);
+[echoCut, cutInfo] = bp_interruption_pipeline(echoData, track, config.interruption);
+runOutput = bp_output_pipeline('prepare_run_dir', config, pathInfo, cutInfo);
+interruptionFiles = bp_output_pipeline('save_interruption', cutInfo, config, runOutput.runDir);
 
 if config.display.showInterruptedEcho
     figure('Name', 'Interrupted Echo', 'Color', 'w');
@@ -46,12 +39,8 @@ if config.display.showInterruptedEcho
     colormap jet;
 end
 
-%% 计算迭代权重
-numType = bp_get_numeric_class(config.general.useSinglePrecision);
-iterWeight = bp_create_iteration_weights(config.iteration.J, numType);
-
 %% 执行 BP 成像
-[imageBP, imageMeta] = bp_run_imaging(track, echoCut, radar, iterWeight, config, cutInfo);
+[imageBP, imageMeta] = bp_imaging_pipeline(track, echoCut, radar, config, cutInfo);
 
 %% 点目标分析
 pointResult = [];
@@ -69,7 +58,7 @@ pointFiles = struct( ...
 if config.analysis.enablePointAnalysis
     try
         [pointResult, pointMeta] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo);
-        pointFiles = bp_save_point_analysis_output(pointResult, pointMeta, config, runOutput.runDir);
+        pointFiles = bp_output_pipeline('save_point_analysis', pointResult, pointMeta, config, runOutput.runDir);
         pointMeta.enabled = true;
     catch err
         pointMeta.enabled = false;
@@ -82,7 +71,7 @@ if config.analysis.enablePointAnalysis
 end
 
 %% 保存成像图
-imageFile = bp_save_image_output(imageBP, config, runOutput.runDir);
+imageFile = bp_output_pipeline('save_image', imageBP, config, runOutput.runDir);
 
 %% 汇总结果
 result = struct();

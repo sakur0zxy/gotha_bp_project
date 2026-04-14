@@ -1,7 +1,13 @@
-﻿function [srOut, info] = bp_apply_interruption(srIn, track, interCfg)
-%BP_APPLY_INTERRUPTION Apply azimuth interruption layout.
-
-numAzSamples = size(srIn, 2);
+﻿function [echoCut, cutInfo] = bp_interruption_pipeline(echoData, track, interCfg)
+%BP_INTERRUPTION_PIPELINE 生成间断采样布局并输出间断后的回波矩阵。
+% 输入：
+%   echoData  原始回波矩阵。
+%   track     轨迹数据。
+%   interCfg  间断配置。
+% 输出：
+%   echoCut   间断后的回波矩阵。
+%   cutInfo   间断布局和约束信息。
+numAzSamples = size(echoData, 2);
 modeName = char(string(interCfg.mode));
 numSegments = interCfg.numSegments;
 missingRatio = interCfg.missingRatio;
@@ -9,9 +15,9 @@ totalMissing = round(numAzSamples * missingRatio);
 totalValid = numAzSamples - totalMissing;
 
 assert(totalValid >= numSegments, ...
-    'missingRatio is too large: each segment must keep at least one sample.');
+    '缺失率过大，每段至少需要保留 1 个采样点。');
 
-srOut = srIn;
+echoCut = echoData;
 meanStep = localEstimateMeanStep(track);
 randomSeedUsed = [];
 constraintInfo = localBuildConstraintInfo(numAzSamples, numSegments, totalMissing, meanStep);
@@ -22,27 +28,26 @@ switch modeName
         gapMaxSamples = blockLengths - 1;
         gapLengths = localDistributeDeterministic(totalMissing, gapMaxSamples);
         segmentLengths = blockLengths - gapLengths;
-
         [activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx] = ...
             localBuildTailGapLayout(blockLengths, segmentLengths);
 
     case 'random_gap'
         numGaps = numSegments - 1;
-        assert(numGaps >= 1, 'random_gap requires at least two kept segments.');
+        assert(numGaps >= 1, 'random_gap 模式至少需要 2 段保留数据。');
 
         constraintInfo = localAnalyzeRandomGapConstraints( ...
             numAzSamples, numSegments, totalMissing, meanStep, ...
             interCfg.gapMinMeters, interCfg.gapMaxMeters);
 
         if constraintInfo.gapMaxSamples < constraintInfo.gapMinSamples
-            error('bp_apply_interruption:GapDiscretizationEmpty', '%s', ...
+            error('bp_interruption_pipeline:GapDiscretizationEmpty', '%s', ...
                 localBuildDiscretizationError(constraintInfo));
         end
 
         minTotalMissing = numGaps * constraintInfo.gapMinSamples;
         maxTotalMissing = numGaps * constraintInfo.gapMaxSamples;
         if totalMissing < minTotalMissing || totalMissing > maxTotalMissing
-            error('bp_apply_interruption:GapRangeMismatch', '%s', ...
+            error('bp_interruption_pipeline:GapRangeMismatch', '%s', ...
                 localBuildMissingRatioError(constraintInfo));
         end
 
@@ -50,38 +55,37 @@ switch modeName
             numGaps, totalMissing, constraintInfo.gapMinSamples, ...
             constraintInfo.gapMaxSamples, interCfg.randomSeed);
         segmentLengths = localBalancedLengths(totalValid, numSegments);
-
         [activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx] = ...
             localBuildRandomGapLayout(segmentLengths, gapLengths);
 
     otherwise
-        error('Unsupported interruption mode: %s', modeName);
+        error('bp_interruption_pipeline:UnsupportedMode', '不支持的间断模式：%s', modeName);
 end
 
 for k = 1:numel(gapStartIdx)
     if gapStartIdx(k) <= gapEndIdx(k)
-        srOut(:, gapStartIdx(k):gapEndIdx(k)) = 0;
+        echoCut(:, gapStartIdx(k):gapEndIdx(k)) = 0;
     end
 end
 
-info = struct();
-info.mode = modeName;
-info.numAzSamples = numAzSamples;
-info.numSegments = numSegments;
-info.missingRatio = missingRatio;
-info.totalMissingSamples = totalMissing;
-info.totalValidSamples = totalValid;
-info.meanAzimuthStep_m = meanStep;
-info.segmentLengthsSamples = segmentLengths;
-info.segmentStartIndices = segmentStartIdx;
-info.segmentEndIndices = segmentEndIdx;
-info.gapLengthsSamples = gapEndIdx - gapStartIdx + 1;
-info.gapLengthsMeters = info.gapLengthsSamples * meanStep;
-info.gapStartIndices = gapStartIdx;
-info.gapEndIndices = gapEndIdx;
-info.activeAzIndices = activeAzIndices;
-info.randomSeedUsed = randomSeedUsed;
-info.constraintInfo = constraintInfo;
+cutInfo = struct();
+cutInfo.mode = modeName;
+cutInfo.numAzSamples = numAzSamples;
+cutInfo.numSegments = numSegments;
+cutInfo.missingRatio = missingRatio;
+cutInfo.totalMissingSamples = totalMissing;
+cutInfo.totalValidSamples = totalValid;
+cutInfo.meanAzimuthStep_m = meanStep;
+cutInfo.segmentLengthsSamples = segmentLengths;
+cutInfo.segmentStartIndices = segmentStartIdx;
+cutInfo.segmentEndIndices = segmentEndIdx;
+cutInfo.gapLengthsSamples = gapEndIdx - gapStartIdx + 1;
+cutInfo.gapLengthsMeters = cutInfo.gapLengthsSamples * meanStep;
+cutInfo.gapStartIndices = gapStartIdx;
+cutInfo.gapEndIndices = gapEndIdx;
+cutInfo.activeAzIndices = activeAzIndices;
+cutInfo.randomSeedUsed = randomSeedUsed;
+cutInfo.constraintInfo = constraintInfo;
 end
 
 function meanStep = localEstimateMeanStep(track)
@@ -90,12 +94,12 @@ y = track.Y(:);
 z = track.Z(:);
 
 if numel(x) < 2
-    error('Not enough track samples to estimate mean azimuth spacing.');
+    error('轨迹点不足，无法估计平均方位向间距。');
 end
 
 stepDist = hypot(hypot(diff(x), diff(y)), diff(z));
 stepDist = stepDist(isfinite(stepDist) & stepDist > 0);
-assert(~isempty(stepDist), 'Track step length is invalid.');
+assert(~isempty(stepDist), '轨迹步长无效。');
 meanStep = mean(stepDist);
 end
 
@@ -139,11 +143,11 @@ end
 
 function msg = localBuildDiscretizationError(info)
 msg = sprintf([ ...
-    'gapMinMeters/gapMaxMeters become an empty discrete interval after conversion.\n' ...
+    'gapMinMeters/gapMaxMeters 离散化后没有有效区间。\n' ...
     'meanStep_m = %.6f\n' ...
     'gapMinMeters = %.6f -> gapMinSamples = %d -> effectiveMinMeters = %.6f\n' ...
     'gapMaxMeters = %.6f -> gapMaxSamples = %d -> effectiveMaxMeters = %.6f\n' ...
-    'To make the interval valid, ensure either gapMinMeters <= %.6f or gapMaxMeters >= %.6f.'], ...
+    '请满足 gapMinMeters <= %.6f 或 gapMaxMeters >= %.6f。'], ...
     info.meanStep_m, ...
     info.gapMinMetersRequested, info.gapMinSamples, info.gapMinMetersEffective, ...
     info.gapMaxMetersRequested, info.gapMaxSamples, info.gapMaxMetersEffective, ...
@@ -153,14 +157,14 @@ end
 
 function msg = localBuildMissingRatioError(info)
 msg = sprintf([ ...
-    'missingRatio does not match the requested random gap limits.\n' ...
+    'missingRatio 与随机间断长度约束不匹配。\n' ...
     'M = %d samples, G = %d gaps, meanStep_m = %.6f\n' ...
     'gapMinMeters = %.6f -> gapMinSamples = %d -> effectiveMinMeters = %.6f\n' ...
     'gapMaxMeters = %.6f -> gapMaxSamples = %d -> effectiveMaxMeters = %.6f\n' ...
     'maxAllowedGapMinSamples = %d -> maxAllowedGapMinMeters = %.6f\n' ...
     'minRequiredGapMaxSamples = %d -> minRequiredGapMaxMeters = %.6f\n' ...
-    'Feasible gapMinMeters range: [0, %.6f]\n' ...
-    'Feasible gapMaxMeters range: [%.6f, %.6f]'], ...
+    '可行的 gapMinMeters 范围：[0, %.6f]\n' ...
+    '可行的 gapMaxMeters 范围：[%.6f, %.6f]'], ...
     info.totalMissingSamples, info.numGaps, info.meanStep_m, ...
     info.gapMinMetersRequested, info.gapMinSamples, info.gapMinMetersEffective, ...
     info.gapMaxMetersRequested, info.gapMaxSamples, info.gapMaxMetersEffective, ...
@@ -200,8 +204,7 @@ while remaining > 0
             progress = true;
         end
     end
-    assert(progress, ...
-        'missingRatio is too large to keep at least one sample in each segment.');
+    assert(progress, '缺失率过大，无法保证每段至少保留 1 个采样点。');
 end
 end
 
@@ -210,7 +213,7 @@ function [gapLengths, seedUsed] = localGenerateRandomGaps( ...
 gapLengths = minGapSamples * ones(1, numGaps);
 remaining = totalMissing - sum(gapLengths);
 capacity = (maxGapSamples - minGapSamples) * ones(1, numGaps);
-seedUsed = bp_resolve_random_seed(randomSeed);
+seedUsed = localResolveRandomSeed(randomSeed);
 
 state = rng;
 cleanup = onCleanup(@() rng(state)); %#ok<NASGU>
@@ -218,7 +221,7 @@ rng(seedUsed, 'twister');
 
 while remaining > 0
     freeIdx = find(capacity > 0);
-    assert(~isempty(freeIdx), 'Random gap capacity is insufficient.');
+    assert(~isempty(freeIdx), '随机间断容量不足。');
 
     addCount = min(remaining, numel(freeIdx));
     pickOrder = randperm(numel(freeIdx), addCount);
@@ -227,6 +230,19 @@ while remaining > 0
     gapLengths(pickIdx) = gapLengths(pickIdx) + 1;
     capacity(pickIdx) = capacity(pickIdx) - 1;
     remaining = remaining - addCount;
+end
+end
+
+function seed = localResolveRandomSeed(seedIn)
+if ~isempty(seedIn)
+    seed = double(seedIn);
+    return;
+end
+
+timeNow = posixtime(datetime('now'));
+seed = mod(floor(timeNow * 1e6), 2^31 - 1);
+if ~isfinite(seed) || seed <= 0
+    seed = 1;
 end
 end
 
@@ -286,3 +302,4 @@ for segIdx = 1:numSegments
     end
 end
 end
+

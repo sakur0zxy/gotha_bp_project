@@ -1,38 +1,31 @@
-﻿%% 点目标剖面与旁瓣分析
-% 必需输入：
-%   imgBP, Br, Fr, PRF, vc, squintAngle, lambda
-% 可选输入：
-%   pointAnaCfg
+﻿function pointAnaResult = point_analysis(imgBP, Br, Fr, PRF, vc, squintAngle, lambda, pointAnaCfg)
+%POINT_ANALYSIS 执行点目标剖面、旁瓣和旋转矫正分析。
+% 输入：
+%   imgBP, Br, Fr, PRF, vc, squintAngle, lambda  点目标分析所需物理量。
+%   pointAnaCfg                                  可选分析配置。
 % 输出：
-%   pointAnaResult
-
-needVars = {'imgBP', 'Br', 'Fr', 'PRF', 'vc', 'squintAngle', 'lambda'};
-for i = 1:numel(needVars)
-    if ~exist(needVars{i}, 'var')
-        error('point_analysis:MissingInput', 'Missing input variable: %s', needVars{i});
-    end
+%   pointAnaResult                               点目标分析结果。
+if nargin < 8 || isempty(pointAnaCfg)
+    pointAnaCfg = struct();
 end
 
 cfg = localDefaultCfg();
-if exist('pointAnaCfg', 'var') && isstruct(pointAnaCfg)
+if isstruct(pointAnaCfg)
     cfg = localMergeStruct(cfg, pointAnaCfg);
 end
 localCheckCfg(cfg);
 
-img = imgBP;
 c = 3e8;
 v = vc;
-prf = PRF;
 fd = 2 * v * sin(squintAngle) / lambda;
 rangeUnit = c / (2 * Fr);
-aziUnit = v / prf;
+aziUnit = v / PRF;
 analysisSource = 'rotated-corrected upsampled slice';
 
-% 在成像结果中截取峰值邻域。
-amp = abs(img);
+amp = abs(imgBP);
 [~, idxMax] = max(amp(:));
 [cy, cx] = ind2sub(size(amp), idxMax);
-cut = localExtractPatch(img, cy, cx, cfg.cutH, cfg.cutW);
+cut = localExtractPatch(imgBP, cy, cx, cfg.cutH, cfg.cutW);
 
 if cfg.showFigures
     figure('Name', 'Target Cut', 'Color', 'w');
@@ -44,24 +37,17 @@ if cfg.showFigures
     title('Target Cut');
 end
 
-% 主估角、主剖面和主指标统一基于旋转后的升采样图。
 up = localUpsampleFFT(cut, cfg.upN);
 [tiltDeg, tiltInfo] = localEstimateTilt(up, cfg);
 rotDeg = 0;
-refineDeltaDeg = 0;
-residualTiltDeg = NaN;
-residualTiltInfo = struct('method', 'not-run', 'used', 'not-run');
-
 if cfg.enableTiltAlign && abs(tiltDeg) >= cfg.tiltApplyThresholdDeg
     rotDeg = -tiltDeg;
 end
 
 upAligned = localRotateComplex(up, rotDeg);
-candidateRotationsDeg = rotDeg;
-candidateScores = NaN;
-candidateResidualsDeg = NaN;
-selectedCandidate = rotDeg;
-
+refineDeltaDeg = 0;
+residualTiltDeg = NaN;
+residualTiltInfo = struct('method', 'not-run', 'used', 'not-run');
 if cfg.enableTiltAlign
     [residualTiltDeg, residualTiltInfo] = localEstimateTilt(upAligned, cfg);
     residualTiltInfo.used = 'residual-diagnostic';
@@ -70,12 +56,6 @@ if cfg.enableTiltAlign
 end
 
 tiltInfo.residualCheckDeg = residualTiltDeg;
-tiltInfo.candidateRotationsDeg = candidateRotationsDeg;
-tiltInfo.candidateScores = candidateScores;
-tiltInfo.candidateResidualsDeg = candidateResidualsDeg;
-tiltInfo.selectedCandidate = selectedCandidate;
-tiltInfo.selectedCandidateScore = NaN;
-tiltInfo.selectedCandidateResidualDeg = residualTiltDeg;
 
 [~, idxUpMax] = max(abs(upAligned(:)));
 [py, px] = ind2sub(size(upAligned), idxUpMax);
@@ -135,11 +115,9 @@ pointAnaResult.upSlice = upAligned;
 pointAnaResult.upSliceRaw = up;
 pointAnaResult.config = cfg;
 pointAnaResult.analysisSource = analysisSource;
-
 pointAnaResult.range = localPackAxisResult(rangeProfile, mR, irwRTheory);
 pointAnaResult.azimuth = localPackAxisResult(aziProfile, mA, irwATheory);
 
-% raw 仅保留未矫正参考，不参与主结果判断。
 pointAnaResult.raw = struct();
 pointAnaResult.raw.range = localPackAxisResult(rangeProfileRaw, mRRaw, irwRTheory);
 pointAnaResult.raw.azimuth = localPackAxisResult(aziProfileRaw, mARaw, irwATheory);
@@ -152,11 +130,6 @@ pointAnaResult.rotated.tiltInfo = tiltInfo;
 pointAnaResult.rotated.refineDeltaDeg = refineDeltaDeg;
 pointAnaResult.rotated.residualTiltDeg = residualTiltDeg;
 pointAnaResult.rotated.residualTiltInfo = residualTiltInfo;
-pointAnaResult.rotated.finalEquivalentTiltDeg = -rotDeg;
-pointAnaResult.rotated.rangeLikeAngleDeg = 0;
-pointAnaResult.rotated.azimuthLikeAngleDeg = 90;
-pointAnaResult.rotated.rangeLikeMetrics = mR;
-pointAnaResult.rotated.azimuthLikeMetrics = mA;
 pointAnaResult.rotated.resultIsPrimary = true;
 pointAnaResult.rotated.resultImageSource = analysisSource;
 
@@ -177,6 +150,7 @@ if isfinite(residualTiltDeg)
 end
 fprintf('Applied rotation: %.3f deg (refine delta: %.3f deg)\n', rotDeg, refineDeltaDeg);
 fprintf('Tilt method: %s\n', tiltInfo.method);
+end
 
 function cfg = localDefaultCfg()
 cfg = struct();
@@ -190,27 +164,27 @@ cfg.tiltEdgeFraction = 0.2;
 end
 
 function cfg = localMergeStruct(cfg, userCfg)
-f = fieldnames(userCfg);
-for k = 1:numel(f)
-    name = f{k};
-    val = userCfg.(name);
-    if isfield(cfg, name) && isstruct(cfg.(name)) && isstruct(val)
-        cfg.(name) = localMergeStruct(cfg.(name), val);
+fields = fieldnames(userCfg);
+for k = 1:numel(fields)
+    name = fields{k};
+    value = userCfg.(name);
+    if isfield(cfg, name) && isstruct(cfg.(name)) && isstruct(value)
+        cfg.(name) = localMergeStruct(cfg.(name), value);
     else
-        cfg.(name) = val;
+        cfg.(name) = value;
     end
 end
 end
 
 function localCheckCfg(cfg)
-assert(cfg.cutH >= 8 && mod(cfg.cutH, 2) == 0, 'cutH must be an even integer >= 8.');
-assert(cfg.cutW >= 8 && mod(cfg.cutW, 2) == 0, 'cutW must be an even integer >= 8.');
-assert(cfg.upN >= 1 && mod(cfg.upN, 1) == 0, 'upN must be an integer >= 1.');
-assert(cfg.tiltApplyThresholdDeg >= 0, 'tiltApplyThresholdDeg must be nonnegative.');
+assert(cfg.cutH >= 8 && mod(cfg.cutH, 2) == 0, 'cutH 必须是不小于 8 的偶数。');
+assert(cfg.cutW >= 8 && mod(cfg.cutW, 2) == 0, 'cutW 必须是不小于 8 的偶数。');
+assert(cfg.upN >= 1 && mod(cfg.upN, 1) == 0, 'upN 必须是不小于 1 的整数。');
+assert(cfg.tiltApplyThresholdDeg >= 0, 'tiltApplyThresholdDeg 必须不小于 0。');
 assert(isnumeric(cfg.tiltEdgeFraction) && isscalar(cfg.tiltEdgeFraction) ...
     && isfinite(cfg.tiltEdgeFraction) && cfg.tiltEdgeFraction > 0 ...
     && cfg.tiltEdgeFraction < 0.5, ...
-    'tiltEdgeFraction must be a finite scalar in (0, 0.5).');
+    'tiltEdgeFraction 必须位于 (0, 0.5) 之间。');
 end
 
 function patch = localExtractPatch(img, cy, cx, h, w)
@@ -238,97 +212,66 @@ function up = localUpsampleFFT(img, upN)
 H = h * upN;
 W = w * upN;
 
-F = fftshift(fft2(fftshift(img)));
-Fup = complex(zeros(H, W, class(F)));
+spec = fftshift(fft2(fftshift(img)));
+specUp = complex(zeros(H, W, class(spec)));
 
 r0 = floor(H / 2) - floor(h / 2) + 1;
 c0 = floor(W / 2) - floor(w / 2) + 1;
 r1 = r0 + h - 1;
 c1 = c0 + w - 1;
 
-Fup(r0:r1, c0:c1) = F;
-up = fftshift(ifft2(fftshift(Fup)));
+specUp(r0:r1, c0:c1) = spec;
+up = fftshift(ifft2(fftshift(specUp)));
 end
 
-function [ang, info] = localEstimateTilt(img, cfg, searchOverride) %#ok<INUSD>
-if nargin < 3
-    searchOverride = struct(); %#ok<NASGU>
-end
-
-info = struct();
-info.method = 'upsampled-column-peak-edge-fit';
-info.used = 'upsampled-column-peak-edge-fit';
-info.estimatedFrom = 'upsampled-slice';
-info.correctionAppliedTo = 'upsampled-slice';
-info.mainPoints = 0;
-info.sidePoints = 0;
-info.pcaRawDeg = NaN;
-info.pcaRangeDeg = NaN;
-info.sideRangeDeg = NaN;
-info.fallbackRangeDeg = NaN;
-info.anisotropy = NaN;
-info.coarseAngleDeg = NaN;
-info.midAngleDeg = NaN;
-info.fineAngleDeg = NaN;
-info.bestScore = NaN;
-info.residualCheckDeg = NaN;
-info.coarsePcaDeg = NaN;
-info.searchCenterDeg = NaN;
-info.searchWindowDeg = NaN;
-info.orientationPoints = 0;
-info.candidateRotationsDeg = NaN;
-info.candidateScores = NaN;
-info.candidateResidualsDeg = NaN;
-info.selectedCandidate = NaN;
-info.rowPeakCols = [];
-info.rowPeakAmp = [];
-info.rowPeakDb = [];
-info.validRowMask = [];
-info.validRowIndices = [];
-info.validRowCount = 0;
-info.colPeakRows = [];
-info.colPeakAmp = [];
-info.usedColumnMask = [];
-info.usedColumnIndices = [];
-info.usedColumnCount = 0;
-info.edgeFraction = cfg.tiltEdgeFraction;
-info.fitSlopePxPerCol = NaN;
-info.fitInterceptPx = NaN;
-info.fitRmsePx = NaN;
-info.lowConfidence = false;
+function [tiltDeg, tiltInfo] = localEstimateTilt(img, cfg)
+tiltInfo = struct();
+tiltInfo.method = 'upsampled-column-peak-edge-fit';
+tiltInfo.used = 'upsampled-column-peak-edge-fit';
+tiltInfo.estimatedFrom = 'upsampled-slice';
+tiltInfo.correctionAppliedTo = 'upsampled-slice';
+tiltInfo.colPeakRows = [];
+tiltInfo.colPeakAmp = [];
+tiltInfo.usedColumnMask = [];
+tiltInfo.usedColumnIndices = [];
+tiltInfo.usedColumnCount = 0;
+tiltInfo.edgeFraction = cfg.tiltEdgeFraction;
+tiltInfo.fitSlopePxPerCol = NaN;
+tiltInfo.fitInterceptPx = NaN;
+tiltInfo.fitRmsePx = NaN;
+tiltInfo.residualCheckDeg = NaN;
+tiltInfo.lowConfidence = false;
 
 amp = abs(img);
 if isempty(amp)
-    ang = 0;
-    info.used = 'empty-image';
-    info.lowConfidence = true;
+    tiltDeg = 0;
+    tiltInfo.used = 'empty-image';
+    tiltInfo.lowConfidence = true;
     return;
 end
 
 [colPeakAmp, colPeakRows] = max(amp, [], 1);
 colPeakAmp = colPeakAmp(:);
 colPeakRows = colPeakRows(:);
-info.colPeakRows = colPeakRows;
-info.colPeakAmp = colPeakAmp;
+tiltInfo.colPeakRows = colPeakRows;
+tiltInfo.colPeakAmp = colPeakAmp;
 
 if max(colPeakAmp) <= 0
-    ang = 0;
-    info.used = 'zero-image';
-    info.lowConfidence = true;
+    tiltDeg = 0;
+    tiltInfo.used = 'zero-image';
+    tiltInfo.lowConfidence = true;
     return;
 end
 
 [usedMask, usedCols, selectMode] = localSelectTiltColumns(size(img, 2), cfg.tiltEdgeFraction);
-info.usedColumnMask = usedMask;
-info.usedColumnIndices = usedCols;
-info.usedColumnCount = numel(usedCols);
-info.mainPoints = numel(usedCols);
-info.orientationPoints = numel(usedCols);
+tiltInfo.usedColumnMask = usedMask;
+tiltInfo.usedColumnIndices = usedCols;
+tiltInfo.usedColumnCount = numel(usedCols);
 
 if strcmp(selectMode, 'insufficient-columns')
-    ang = 0;
-    info.used = 'upsampled-column-peak-edge-fit+insufficient-columns';
-    info.lowConfidence = true;
+    tiltDeg = 0;
+    tiltInfo.used = 'upsampled-column-peak-edge-fit+insufficient-columns';
+    tiltInfo.lowConfidence = true;
     return;
 end
 
@@ -337,17 +280,16 @@ x = usedCols(:) - (size(img, 2) + 1) / 2;
 
 [fitSlope, fitIntercept, fitRmse] = localLineFit(x, y);
 if ~isfinite(fitSlope)
-    ang = 0;
-    info.used = 'upsampled-column-peak-edge-fit+invalid-fit';
-    info.lowConfidence = true;
+    tiltDeg = 0;
+    tiltInfo.used = 'upsampled-column-peak-edge-fit+invalid-fit';
+    tiltInfo.lowConfidence = true;
     return;
 end
 
-ang = localToRangeAxisAngle(atan2d(fitSlope, 1));
-info.fitSlopePxPerCol = fitSlope;
-info.fitInterceptPx = fitIntercept;
-info.fitRmsePx = fitRmse;
-info.fineAngleDeg = ang;
+tiltDeg = localToRangeAxisAngle(atan2d(fitSlope, 1));
+tiltInfo.fitSlopePxPerCol = fitSlope;
+tiltInfo.fitInterceptPx = fitIntercept;
+tiltInfo.fitRmsePx = fitRmse;
 end
 
 function [usedMask, usedCols, selectMode] = localSelectTiltColumns(numCols, edgeFraction)
@@ -368,7 +310,6 @@ if edgeCount < 1
     return;
 end
 
-% 只用左右边缘列拟合倾角，中间列不参与。
 usedMask(1:edgeCount) = true;
 usedMask(end-edgeCount+1:end) = true;
 usedCols = find(usedMask);
@@ -390,7 +331,6 @@ end
 
 A = [x(:), ones(numel(x), 1)];
 coef = A \ y(:);
-
 if numel(coef) ~= 2 || any(~isfinite(coef))
     return;
 end
@@ -414,28 +354,24 @@ cy = (h + 1) / 2;
 
 x = xx - cx;
 y = yy - cy;
-
 t = deg2rad(angDeg);
+
 xIn = x * cos(t) + y * sin(t) + cx;
 yIn = -x * sin(t) + y * cos(t) + cy;
 
-re = interp2(real(img), xIn, yIn, 'linear', 0);
-im = interp2(imag(img), xIn, yIn, 'linear', 0);
-out = re + 1i * im;
+realPart = interp2(real(img), xIn, yIn, 'linear', 0);
+imagPart = interp2(imag(img), xIn, yIn, 'linear', 0);
+out = realPart + 1i * imagPart;
 end
 
 function y = localNorm(x)
 x = x(:);
-m = max(abs(x));
-if m > 0
-    y = x / m;
+scale = max(abs(x));
+if scale > 0
+    y = x / scale;
 else
     y = x;
 end
-end
-
-function d = localToDb(x)
-d = 20 * log10(abs(x) + eps);
 end
 
 function axisResult = localPackAxisResult(profile, metrics, theoryIRW)
@@ -447,11 +383,12 @@ end
 
 function localPlotProfile(profile, figName, xLabelText)
 profileDb = localToDb(profile);
-[pks, locs] = localPeakMark(profileDb);
+[peakValues, peakIndices] = localPeakMark(profileDb);
 
 figure('Name', figName, 'Color', 'w');
-plot(profileDb, 'b'); hold on;
-plot(locs, pks, 'r*');
+plot(profileDb, 'b');
+hold on;
+plot(peakIndices, peakValues, 'r*');
 hold off;
 grid on;
 axis tight;
@@ -460,147 +397,154 @@ ylabel('Amplitude (dB)');
 title(figName);
 end
 
-function [pks, locs] = localPeakMark(dbLine)
-n = numel(dbLine);
-if n < 3
-    locs = (1:n).';
-    pks = dbLine(locs);
+function [peakValues, peakIndices] = localPeakMark(dbLine)
+numPoints = numel(dbLine);
+if numPoints < 3
+    peakIndices = (1:numPoints).';
+    peakValues = dbLine(peakIndices);
     return;
 end
-locs = find(dbLine(2:n-1) >= dbLine(1:n-2) & dbLine(2:n-1) > dbLine(3:n)) + 1;
-if isempty(locs)
-    [~, locs] = max(dbLine);
+
+peakIndices = find(dbLine(2:numPoints-1) >= dbLine(1:numPoints-2) ...
+    & dbLine(2:numPoints-1) > dbLine(3:numPoints)) + 1;
+if isempty(peakIndices)
+    [~, peakIndices] = max(dbLine);
 end
-pks = dbLine(locs);
+peakValues = dbLine(peakIndices);
 end
 
-function m = localMetrics(profile, upN, unit)
-m = struct();
-m.PSLR_dB = localPSLR(profile);
-m.ISLR_dB = localISLR(profile);
-m.IRW_m = localIRW(profile, upN, unit);
+function metrics = localMetrics(profile, upN, unit)
+metrics = struct();
+metrics.PSLR_dB = localPSLR(profile);
+metrics.ISLR_dB = localISLR(profile);
+metrics.IRW_m = localIRW(profile, upN, unit);
 end
 
 function val = localPSLR(profile)
-s = abs(profile(:));
-if isempty(s) || max(s) <= 0
+signal = abs(profile(:));
+if isempty(signal) || max(signal) <= 0
     val = NaN;
     return;
 end
 
-idx = localFindPeaks(s);
-if isempty(idx)
+peakIdx = localFindPeaks(signal);
+if isempty(peakIdx)
     val = NaN;
     return;
 end
-pk = sort(s(idx), 'descend');
-if numel(pk) < 2
+
+peakValues = sort(signal(peakIdx), 'descend');
+if numel(peakValues) < 2
     val = -Inf;
 else
-    val = 20 * log10(pk(2) / pk(1));
+    val = 20 * log10(peakValues(2) / peakValues(1));
 end
 end
 
 function val = localISLR(profile)
-s = abs(profile(:));
-if isempty(s) || max(s) <= 0
+signal = abs(profile(:));
+if isempty(signal) || max(signal) <= 0
     val = NaN;
     return;
 end
 
-[~, i0] = max(s);
-[l, r] = localMainlobeBound(s, i0);
-if l >= r
+[~, peakIdx] = max(signal);
+[leftIdx, rightIdx] = localMainlobeBound(signal, peakIdx);
+if leftIdx >= rightIdx
     val = NaN;
     return;
 end
-pMain = sum(s(l:r).^2);
-pAll = sum(s.^2);
-if pMain <= 0 || pAll <= pMain
+
+mainPower = sum(signal(leftIdx:rightIdx).^2);
+allPower = sum(signal.^2);
+if mainPower <= 0 || allPower <= mainPower
     val = -Inf;
 else
-    val = 10 * log10((pAll - pMain) / pMain);
+    val = 10 * log10((allPower - mainPower) / mainPower);
 end
 end
 
 function val = localIRW(profile, upN, unit)
-s = abs(profile(:));
-if isempty(s)
-    val = NaN;
-    return;
-end
-[pk, i0] = max(s);
-if pk <= 0
+signal = abs(profile(:));
+if isempty(signal)
     val = NaN;
     return;
 end
 
-thr = pk * 10^(-3/20);
-
-iL = i0;
-while iL > 1 && s(iL) > thr
-    iL = iL - 1;
-end
-if iL == 1 && s(iL) > thr
+[peakVal, peakIdx] = max(signal);
+if peakVal <= 0
     val = NaN;
     return;
 end
-xL = localCross(iL, s(iL), iL + 1, s(iL + 1), thr);
 
-iR = i0;
-while iR < numel(s) && s(iR) > thr
-    iR = iR + 1;
+threshold = peakVal * 10^(-3 / 20);
+
+leftIdx = peakIdx;
+while leftIdx > 1 && signal(leftIdx) > threshold
+    leftIdx = leftIdx - 1;
 end
-if iR == numel(s) && s(iR) > thr
+if leftIdx == 1 && signal(leftIdx) > threshold
     val = NaN;
     return;
 end
-xR = localCross(iR - 1, s(iR - 1), iR, s(iR), thr);
+xLeft = localCross(leftIdx, signal(leftIdx), leftIdx + 1, signal(leftIdx + 1), threshold);
 
-val = (xR - xL) / upN * unit;
+rightIdx = peakIdx;
+while rightIdx < numel(signal) && signal(rightIdx) > threshold
+    rightIdx = rightIdx + 1;
 end
-
-function idx = localFindPeaks(s)
-n = numel(s);
-if n < 3
-    idx = (1:n).';
+if rightIdx == numel(signal) && signal(rightIdx) > threshold
+    val = NaN;
     return;
 end
-idx = find(s(2:n-1) >= s(1:n-2) & s(2:n-1) > s(3:n)) + 1;
-if s(1) > s(2)
+xRight = localCross(rightIdx - 1, signal(rightIdx - 1), rightIdx, signal(rightIdx), threshold);
+
+val = (xRight - xLeft) / upN * unit;
+end
+
+function idx = localFindPeaks(signal)
+numPoints = numel(signal);
+if numPoints < 3
+    idx = (1:numPoints).';
+    return;
+end
+
+idx = find(signal(2:numPoints-1) >= signal(1:numPoints-2) ...
+    & signal(2:numPoints-1) > signal(3:numPoints)) + 1;
+if signal(1) > signal(2)
     idx = [1; idx(:)];
 end
-if s(end) > s(end-1)
-    idx = [idx(:); n];
+if signal(end) > signal(end - 1)
+    idx = [idx(:); numPoints];
 end
 idx = unique(idx(:));
 end
 
-function [l, r] = localMainlobeBound(s, i0)
-mins = find(s(2:end-1) <= s(1:end-2) & s(2:end-1) < s(3:end)) + 1;
-lCand = mins(mins < i0);
-rCand = mins(mins > i0);
+function [leftIdx, rightIdx] = localMainlobeBound(signal, peakIdx)
+mins = find(signal(2:end-1) <= signal(1:end-2) & signal(2:end-1) < signal(3:end)) + 1;
+leftCand = mins(mins < peakIdx);
+rightCand = mins(mins > peakIdx);
 
-if isempty(lCand)
-    l = max(1, i0 - 1);
+if isempty(leftCand)
+    leftIdx = max(1, peakIdx - 1);
 else
-    l = lCand(end);
+    leftIdx = leftCand(end);
 end
-if isempty(rCand)
-    r = min(numel(s), i0 + 1);
+if isempty(rightCand)
+    rightIdx = min(numel(signal), peakIdx + 1);
 else
-    r = rCand(1);
+    rightIdx = rightCand(1);
 end
 
-if l >= r
-    thr = s(i0) * 10^(-3/20);
-    l = i0;
-    while l > 1 && s(l) > thr
-        l = l - 1;
+if leftIdx >= rightIdx
+    threshold = signal(peakIdx) * 10^(-3 / 20);
+    leftIdx = peakIdx;
+    while leftIdx > 1 && signal(leftIdx) > threshold
+        leftIdx = leftIdx - 1;
     end
-    r = i0;
-    while r < numel(s) && s(r) > thr
-        r = r + 1;
+    rightIdx = peakIdx;
+    while rightIdx < numel(signal) && signal(rightIdx) > threshold
+        rightIdx = rightIdx + 1;
     end
 end
 end
@@ -613,15 +557,20 @@ else
 end
 end
 
-function a = localNormAngle(a)
-a = mod(a + 90, 180) - 90;
+function dbVal = localToDb(x)
+dbVal = 20 * log10(abs(x) + eps);
 end
 
-function a = localToRangeAxisAngle(a)
-a = localNormAngle(a);
-if a > 45
-    a = a - 90;
-elseif a <= -45
-    a = a + 90;
+function angleOut = localNormAngle(angleIn)
+angleOut = mod(angleIn + 90, 180) - 90;
+end
+
+function angleOut = localToRangeAxisAngle(angleIn)
+angleOut = localNormAngle(angleIn);
+if angleOut > 45
+    angleOut = angleOut - 90;
+elseif angleOut <= -45
+    angleOut = angleOut + 90;
 end
 end
+
