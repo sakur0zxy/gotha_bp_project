@@ -1,4 +1,4 @@
-﻿function result = main_gotha_bp(userConfig)
+function result = main_gotha_bp(userConfig)
 %MAIN_GOTHA_BP 运行 GOTCHA BP 成像主流程。
 % 输入：
 %   userConfig  可选，用于覆盖默认配置的结构体。
@@ -16,12 +16,7 @@ if nargin >= 1 && ~isempty(userConfig)
     config = bp_merge_config(config, userConfig);
 end
 config = bp_validate_config(config);
-if ~isfield(config.output, 'saveInterruptionText')
-    config.output.saveInterruptionText = true;
-end
-if ~isfield(config.output, 'saveInterruptionImage')
-    config.output.saveInterruptionImage = true;
-end
+
 %% 读取路径和数据
 [pathInfo, track, echoData, radar, dataRoot] = bp_data_pipeline(config);
 
@@ -45,15 +40,7 @@ end
 %% 点目标分析
 pointResult = [];
 pointMeta = struct('enabled', false);
-pointFiles = struct( ...
-    'matFile', '', ...
-    'textFile', '', ...
-    'imageFile', '', ...
-    'imageFiles', struct( ...
-        'upslice', '', ...
-        'contour', '', ...
-        'rangeProfile', '', ...
-        'azimuthProfile', ''));
+pointFiles = localEmptyPointFiles();
 
 if config.analysis.enablePointAnalysis
     try
@@ -86,10 +73,22 @@ result.meta.runOutput = runOutput;
 result.pointAnalysis = pointResult;
 result.pointAnalysisMeta = pointMeta;
 result.pointAnalysisFiles = pointFiles;
+
 if strcmp(cutInfo.mode, 'random_gap')
     fprintf('Random seed used: %.0f\n', cutInfo.randomSeedUsed);
 end
-
 fprintf('运行输出目录：%s\n', runOutput.runDir);
 fprintf('成像图文件：%s\n', imageFile);
+end
+
+function pointFiles = localEmptyPointFiles()
+pointFiles = struct( ...
+    'matFile', '', ...
+    'textFile', '', ...
+    'imageFile', '', ...
+    'imageFiles', struct( ...
+        'upslice', '', ...
+        'contour', '', ...
+        'rangeProfile', '', ...
+        'azimuthProfile', ''));
 end

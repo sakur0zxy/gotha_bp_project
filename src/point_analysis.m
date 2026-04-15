@@ -1,4 +1,4 @@
-﻿function pointAnaResult = point_analysis(imgBP, Br, Fr, PRF, vc, squintAngle, lambda, pointAnaCfg)
+function pointAnaResult = point_analysis(imgBP, Br, Fr, PRF, vc, squintAngle, lambda, pointAnaCfg)
 %POINT_ANALYSIS 执行点目标剖面、旁瓣和旋转矫正分析。
 % 输入：
 %   imgBP, Br, Fr, PRF, vc, squintAngle, lambda  点目标分析所需物理量。
@@ -15,141 +15,18 @@ if isstruct(pointAnaCfg)
 end
 localCheckCfg(cfg);
 
-c = 3e8;
-v = vc;
-fd = 2 * v * sin(squintAngle) / lambda;
-rangeUnit = c / (2 * Fr);
-aziUnit = v / PRF;
-analysisSource = 'rotated-corrected upsampled slice';
+[geom, theory] = localBuildPhysicalContext(Br, Fr, PRF, vc, squintAngle, lambda);
+sliceData = localPrepareSliceData(imgBP, cfg);
+rotationData = localAnalyzeTiltAlignment(sliceData.up, cfg);
+profileData = localBuildProfiles(rotationData.upAligned, sliceData.up, cfg.upN);
+metricData = localBuildMetrics(profileData, cfg.upN, geom, theory);
 
-amp = abs(imgBP);
-[~, idxMax] = max(amp(:));
-[cy, cx] = ind2sub(size(amp), idxMax);
-cut = localExtractPatch(imgBP, cy, cx, cfg.cutH, cfg.cutW);
+pointAnaResult = localBuildResult(sliceData, rotationData, profileData, metricData, cfg);
 
-if cfg.showFigures
-    figure('Name', 'Target Cut', 'Color', 'w');
-    imagesc(abs(cut));
-    axis image;
-    colormap jet;
-    xlabel('Range samples');
-    ylabel('Azimuth samples');
-    title('Target Cut');
-end
-
-up = localUpsampleFFT(cut, cfg.upN);
-[tiltDeg, tiltInfo] = localEstimateTilt(up, cfg);
-rotDeg = 0;
-if cfg.enableTiltAlign && abs(tiltDeg) >= cfg.tiltApplyThresholdDeg
-    rotDeg = -tiltDeg;
-end
-
-upAligned = localRotateComplex(up, rotDeg);
-refineDeltaDeg = 0;
-residualTiltDeg = NaN;
-residualTiltInfo = struct('method', 'not-run', 'used', 'not-run');
-if cfg.enableTiltAlign
-    [residualTiltDeg, residualTiltInfo] = localEstimateTilt(upAligned, cfg);
-    residualTiltInfo.used = 'residual-diagnostic';
-    residualTiltInfo.estimatedFrom = 'rotated-upsampled-slice';
-    residualTiltInfo.correctionAppliedTo = 'diagnostic-only';
-end
-
-tiltInfo.residualCheckDeg = residualTiltDeg;
-
-[~, idxUpMax] = max(abs(upAligned(:)));
-[py, px] = ind2sub(size(upAligned), idxUpMax);
-[~, idxUpRawMax] = max(abs(up(:)));
-[pyRaw, pxRaw] = ind2sub(size(up), idxUpRawMax);
-
-if cfg.showFigures
-    figure('Name', 'Upsampled Slice', 'Color', 'w');
-    imagesc(abs(upAligned));
-    axis image;
-    colormap jet;
-    xlabel('Range samples');
-    ylabel('Azimuth samples');
-    if abs(rotDeg) > 0
-        title(sprintf('Upsampled Slice (rotation %.2f deg)', rotDeg));
-    else
-        title('Upsampled Slice');
-    end
-
-    figure('Name', 'Target Contour', 'Color', 'w');
-    contour(abs(upAligned));
-    axis image;
-    colormap jet;
-    xlabel('Range samples');
-    ylabel('Azimuth samples');
-    title('Target Contour');
-end
-
-rangeProfile = localNorm(upAligned(py, :).');
-aziProfile = localNorm(upAligned(:, px));
-rangeProfileRaw = localNorm(up(pyRaw, :).');
-aziProfileRaw = localNorm(up(:, pxRaw));
-
-if cfg.showFigures
-    localPlotProfile(rangeProfile, 'Range Profile', 'Range samples');
-    localPlotProfile(aziProfile, 'Azimuth Profile', 'Azimuth samples');
-end
-
-mR = localMetrics(rangeProfile, cfg.upN, rangeUnit);
-mA = localMetrics(aziProfile, cfg.upN, aziUnit);
-mRRaw = localMetrics(rangeProfileRaw, cfg.upN, rangeUnit);
-mARaw = localMetrics(aziProfileRaw, cfg.upN, aziUnit);
-
-irwRTheory = 0.886 * c / (2 * Br);
-if abs(fd) < eps
-    irwATheory = NaN;
-else
-    irwATheory = 0.886 * (v / fd);
-end
-
-pointAnaResult = struct();
-pointAnaResult.peakInImage = [cy, cx];
-pointAnaResult.peakInUpSlice = [py, px];
-pointAnaResult.peakInUpSliceRaw = [pyRaw, pxRaw];
-pointAnaResult.cut = cut;
-pointAnaResult.upSlice = upAligned;
-pointAnaResult.upSliceRaw = up;
-pointAnaResult.config = cfg;
-pointAnaResult.analysisSource = analysisSource;
-pointAnaResult.range = localPackAxisResult(rangeProfile, mR, irwRTheory);
-pointAnaResult.azimuth = localPackAxisResult(aziProfile, mA, irwATheory);
-
-pointAnaResult.raw = struct();
-pointAnaResult.raw.range = localPackAxisResult(rangeProfileRaw, mRRaw, irwRTheory);
-pointAnaResult.raw.azimuth = localPackAxisResult(aziProfileRaw, mARaw, irwATheory);
-
-pointAnaResult.rotated = struct();
-pointAnaResult.rotated.enabled = cfg.enableTiltAlign;
-pointAnaResult.rotated.estimatedTiltDeg = tiltDeg;
-pointAnaResult.rotated.appliedRotationDeg = rotDeg;
-pointAnaResult.rotated.tiltInfo = tiltInfo;
-pointAnaResult.rotated.refineDeltaDeg = refineDeltaDeg;
-pointAnaResult.rotated.residualTiltDeg = residualTiltDeg;
-pointAnaResult.rotated.residualTiltInfo = residualTiltInfo;
-pointAnaResult.rotated.resultIsPrimary = true;
-pointAnaResult.rotated.resultImageSource = analysisSource;
-
-disp('------------------------------------------------------------');
-fprintf('Analysis source: %s\n', pointAnaResult.analysisSource);
-fprintf('Range PSLR:   %.4f dB\n', mR.PSLR_dB);
-fprintf('Azimuth PSLR: %.4f dB\n', mA.PSLR_dB);
-fprintf('Range ISLR:   %.4f dB\n', mR.ISLR_dB);
-fprintf('Azimuth ISLR: %.4f dB\n', mA.ISLR_dB);
-fprintf('Range IRW:    %.6f m   Theory: %.6f m\n', mR.IRW_m, irwRTheory);
-fprintf('Azimuth IRW:  %.6f m   Theory: %.6f m\n', mA.IRW_m, irwATheory);
-fprintf('Raw PSLR (R/A): %.4f / %.4f dB\n', mRRaw.PSLR_dB, mARaw.PSLR_dB);
-fprintf('Raw ISLR (R/A): %.4f / %.4f dB\n', mRRaw.ISLR_dB, mARaw.ISLR_dB);
-fprintf('Raw IRW  (R/A): %.6f / %.6f m\n', mRRaw.IRW_m, mARaw.IRW_m);
-fprintf('Estimated tilt angle: %.3f deg\n', tiltDeg);
-if isfinite(residualTiltDeg)
-    fprintf('Residual tilt after rotation: %.3f deg\n', residualTiltDeg);
-end
-fprintf('Applied rotation: %.3f deg (refine delta: %.3f deg)\n', rotDeg, refineDeltaDeg);
-fprintf('Tilt method: %s\n', tiltInfo.method);
+localShowFigures(cfg, sliceData.cut, rotationData.upAligned, ...
+    pointAnaResult.range.profile, pointAnaResult.azimuth.profile, ...
+    rotationData.appliedRotationDeg);
+localPrintSummary(pointAnaResult, metricData);
 end
 
 function cfg = localDefaultCfg()
@@ -185,6 +62,203 @@ assert(isnumeric(cfg.tiltEdgeFraction) && isscalar(cfg.tiltEdgeFraction) ...
     && isfinite(cfg.tiltEdgeFraction) && cfg.tiltEdgeFraction > 0 ...
     && cfg.tiltEdgeFraction < 0.5, ...
     'tiltEdgeFraction 必须位于 (0, 0.5) 之间。');
+end
+
+function [geom, theory] = localBuildPhysicalContext(Br, Fr, PRF, vc, squintAngle, lambda)
+c = 3e8;
+fd = 2 * vc * sin(squintAngle) / lambda;
+
+geom = struct();
+geom.rangeUnit = c / (2 * Fr);
+geom.azimuthUnit = vc / PRF;
+
+theory = struct();
+theory.rangeIRW = 0.886 * c / (2 * Br);
+if abs(fd) < eps
+    theory.azimuthIRW = NaN;
+else
+    theory.azimuthIRW = 0.886 * (vc / fd);
+end
+end
+
+function sliceData = localPrepareSliceData(imgBP, cfg)
+amp = abs(imgBP);
+[~, idxMax] = max(amp(:));
+[cy, cx] = ind2sub(size(amp), idxMax);
+cut = localExtractPatch(imgBP, cy, cx, cfg.cutH, cfg.cutW);
+up = localUpsampleFFT(cut, cfg.upN);
+
+sliceData = struct();
+sliceData.peakInImage = [cy, cx];
+sliceData.cut = cut;
+sliceData.up = up;
+sliceData.peakInUpSliceRaw = localFindPeak(up);
+end
+
+function rotationData = localAnalyzeTiltAlignment(up, cfg)
+[tiltDeg, tiltInfo] = localEstimateTilt(up, cfg);
+rotDeg = 0;
+if cfg.enableTiltAlign && abs(tiltDeg) >= cfg.tiltApplyThresholdDeg
+    rotDeg = -tiltDeg;
+end
+
+upAligned = localRotateComplex(up, rotDeg);
+residualTiltDeg = NaN;
+residualTiltInfo = struct('method', 'not-run', 'used', 'not-run');
+if cfg.enableTiltAlign
+    [residualTiltDeg, residualTiltInfo] = localEstimateTilt(upAligned, cfg);
+    residualTiltInfo.used = 'residual-diagnostic';
+    residualTiltInfo.estimatedFrom = 'rotated-upsampled-slice';
+    residualTiltInfo.correctionAppliedTo = 'diagnostic-only';
+end
+tiltInfo.residualCheckDeg = residualTiltDeg;
+
+rotationData = struct();
+rotationData.upAligned = upAligned;
+rotationData.peakInUpSlice = localFindPeak(upAligned);
+rotationData.estimatedTiltDeg = tiltDeg;
+rotationData.appliedRotationDeg = rotDeg;
+rotationData.refineDeltaDeg = 0;
+rotationData.residualTiltDeg = residualTiltDeg;
+rotationData.tiltInfo = tiltInfo;
+rotationData.residualTiltInfo = residualTiltInfo;
+rotationData.analysisSource = 'rotated-corrected upsampled slice';
+end
+
+function profileData = localBuildProfiles(upAligned, upRaw, upN)
+peakAligned = localFindPeak(upAligned);
+peakRaw = localFindPeak(upRaw);
+
+profileData = struct();
+profileData.peakInUpSlice = peakAligned;
+profileData.peakInUpSliceRaw = peakRaw;
+profileData.rangeProfile = localNorm(upAligned(peakAligned(1), :).');
+profileData.aziProfile = localNorm(upAligned(:, peakAligned(2)));
+profileData.rangeProfileRaw = localNorm(upRaw(peakRaw(1), :).');
+profileData.aziProfileRaw = localNorm(upRaw(:, peakRaw(2)));
+profileData.upN = upN;
+end
+
+function metricData = localBuildMetrics(profileData, upN, geom, theory)
+metricData = struct();
+metricData.range = localMetrics(profileData.rangeProfile, upN, geom.rangeUnit);
+metricData.azimuth = localMetrics(profileData.aziProfile, upN, geom.azimuthUnit);
+metricData.rangeRaw = localMetrics(profileData.rangeProfileRaw, upN, geom.rangeUnit);
+metricData.azimuthRaw = localMetrics(profileData.aziProfileRaw, upN, geom.azimuthUnit);
+metricData.theory = theory;
+end
+
+function pointAnaResult = localBuildResult(sliceData, rotationData, profileData, metricData, cfg)
+pointAnaResult = struct();
+pointAnaResult.peakInImage = sliceData.peakInImage;
+pointAnaResult.peakInUpSlice = profileData.peakInUpSlice;
+pointAnaResult.peakInUpSliceRaw = profileData.peakInUpSliceRaw;
+pointAnaResult.cut = sliceData.cut;
+pointAnaResult.upSlice = rotationData.upAligned;
+pointAnaResult.upSliceRaw = sliceData.up;
+pointAnaResult.config = cfg;
+pointAnaResult.analysisSource = rotationData.analysisSource;
+pointAnaResult.range = localPackAxisResult( ...
+    profileData.rangeProfile, metricData.range, metricData.theory.rangeIRW);
+pointAnaResult.azimuth = localPackAxisResult( ...
+    profileData.aziProfile, metricData.azimuth, metricData.theory.azimuthIRW);
+
+pointAnaResult.raw = struct();
+pointAnaResult.raw.range = localPackAxisResult( ...
+    profileData.rangeProfileRaw, metricData.rangeRaw, metricData.theory.rangeIRW);
+pointAnaResult.raw.azimuth = localPackAxisResult( ...
+    profileData.aziProfileRaw, metricData.azimuthRaw, metricData.theory.azimuthIRW);
+
+pointAnaResult.rotated = struct();
+pointAnaResult.rotated.enabled = cfg.enableTiltAlign;
+pointAnaResult.rotated.estimatedTiltDeg = rotationData.estimatedTiltDeg;
+pointAnaResult.rotated.appliedRotationDeg = rotationData.appliedRotationDeg;
+pointAnaResult.rotated.tiltInfo = rotationData.tiltInfo;
+pointAnaResult.rotated.refineDeltaDeg = rotationData.refineDeltaDeg;
+pointAnaResult.rotated.residualTiltDeg = rotationData.residualTiltDeg;
+pointAnaResult.rotated.residualTiltInfo = rotationData.residualTiltInfo;
+pointAnaResult.rotated.resultIsPrimary = true;
+pointAnaResult.rotated.resultImageSource = rotationData.analysisSource;
+end
+
+function localShowFigures(cfg, cut, upAligned, rangeProfile, aziProfile, rotDeg)
+if ~cfg.showFigures
+    return;
+end
+
+localShowCutFigure(cut);
+localShowUpsliceFigure(upAligned, rotDeg);
+localShowContourFigure(upAligned);
+localPlotProfile(rangeProfile, 'Range Profile', 'Range samples');
+localPlotProfile(aziProfile, 'Azimuth Profile', 'Azimuth samples');
+end
+
+function localShowCutFigure(cut)
+figure('Name', 'Target Cut', 'Color', 'w');
+imagesc(abs(cut));
+axis image;
+colormap jet;
+xlabel('Range samples');
+ylabel('Azimuth samples');
+title('Target Cut');
+end
+
+function localShowUpsliceFigure(upAligned, rotDeg)
+figure('Name', 'Upsampled Slice', 'Color', 'w');
+imagesc(abs(upAligned));
+axis image;
+colormap jet;
+xlabel('Range samples');
+ylabel('Azimuth samples');
+if abs(rotDeg) > 0
+    title(sprintf('Upsampled Slice (rotation %.2f deg)', rotDeg));
+else
+    title('Upsampled Slice');
+end
+end
+
+function localShowContourFigure(upAligned)
+figure('Name', 'Target Contour', 'Color', 'w');
+contour(abs(upAligned));
+axis image;
+colormap jet;
+xlabel('Range samples');
+ylabel('Azimuth samples');
+title('Target Contour');
+end
+
+function localPrintSummary(pointAnaResult, metricData)
+disp('------------------------------------------------------------');
+fprintf('Analysis source: %s\n', pointAnaResult.analysisSource);
+fprintf('Range PSLR:   %.4f dB\n', metricData.range.PSLR_dB);
+fprintf('Azimuth PSLR: %.4f dB\n', metricData.azimuth.PSLR_dB);
+fprintf('Range ISLR:   %.4f dB\n', metricData.range.ISLR_dB);
+fprintf('Azimuth ISLR: %.4f dB\n', metricData.azimuth.ISLR_dB);
+fprintf('Range IRW:    %.6f m   Theory: %.6f m\n', ...
+    metricData.range.IRW_m, metricData.theory.rangeIRW);
+fprintf('Azimuth IRW:  %.6f m   Theory: %.6f m\n', ...
+    metricData.azimuth.IRW_m, metricData.theory.azimuthIRW);
+fprintf('Raw PSLR (R/A): %.4f / %.4f dB\n', ...
+    metricData.rangeRaw.PSLR_dB, metricData.azimuthRaw.PSLR_dB);
+fprintf('Raw ISLR (R/A): %.4f / %.4f dB\n', ...
+    metricData.rangeRaw.ISLR_dB, metricData.azimuthRaw.ISLR_dB);
+fprintf('Raw IRW  (R/A): %.6f / %.6f m\n', ...
+    metricData.rangeRaw.IRW_m, metricData.azimuthRaw.IRW_m);
+fprintf('Estimated tilt angle: %.3f deg\n', pointAnaResult.rotated.estimatedTiltDeg);
+if isfinite(pointAnaResult.rotated.residualTiltDeg)
+    fprintf('Residual tilt after rotation: %.3f deg\n', ...
+        pointAnaResult.rotated.residualTiltDeg);
+end
+fprintf('Applied rotation: %.3f deg (refine delta: %.3f deg)\n', ...
+    pointAnaResult.rotated.appliedRotationDeg, ...
+    pointAnaResult.rotated.refineDeltaDeg);
+fprintf('Tilt method: %s\n', pointAnaResult.rotated.tiltInfo.method);
+end
+
+function peakPos = localFindPeak(img)
+[~, idxMax] = max(abs(img(:)));
+[py, px] = ind2sub(size(img), idxMax);
+peakPos = [py, px];
 end
 
 function patch = localExtractPatch(img, cy, cx, h, w)
@@ -277,7 +351,6 @@ end
 
 y = colPeakRows(usedCols) - (size(img, 1) + 1) / 2;
 x = usedCols(:) - (size(img, 2) + 1) / 2;
-
 [fitSlope, fitIntercept, fitRmse] = localLineFit(x, y);
 if ~isfinite(fitSlope)
     tiltDeg = 0;
@@ -573,4 +646,3 @@ elseif angleOut <= -45
     angleOut = angleOut + 90;
 end
 end
-

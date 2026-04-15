@@ -41,7 +41,8 @@ result = main_gotha_bp();
 默认配置位于 `config/default_config.m`。
 
 ### 数据目录
-- `config.path.dataRootCandidates`：数据根目录候选，默认检查 `.` 和 `gotcha_BP`
+- `config.path.dataRootCandidates`：数据根目录候选，默认检查工作区根目录下的 `.` 和 `gotcha_BP`
+- 上述路径相对工作区根目录解析，不相对 `gotha_bp_project` 目录，也不依赖 MATLAB 当前临时工作目录
 
 ### 间断采样
 - `config.interruption.mode`：`tail_gap` 或 `random_gap` （`固定间断` 或 `随机间断`） 
@@ -80,7 +81,7 @@ result = main_gotha_bp(userCfg);
 详细算法说明见 `src/point_analysis_algorithm.md`。
 
 ## 输出文件
-每次运行会在 `img/` 下创建独立目录。`random_gap` 模式会把实际种子写入目录名。
+每次运行会在工作区根目录下的 `img/` 中创建独立目录。`random_gap` 模式会把实际种子写入目录名。
 
 常见输出文件：
 

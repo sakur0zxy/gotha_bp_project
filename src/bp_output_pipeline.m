@@ -1,4 +1,4 @@
-﻿function varargout = bp_output_pipeline(action, varargin)
+function varargout = bp_output_pipeline(action, varargin)
 %BP_OUTPUT_PIPELINE 统一处理输出目录、图片和摘要文件保存。
 % 用法：
 %   runOutput = bp_output_pipeline('prepare_run_dir', config, pathInfo, cutInfo)
@@ -22,9 +22,7 @@ end
 
 function runOutput = localPrepareRunDir(cfg, context, cutInfo)
 baseDir = fullfile(context.workspaceRoot, cfg.output.outputDirName);
-if exist(baseDir, 'dir') ~= 7
-    mkdir(baseDir);
-end
+localEnsureDir(baseDir);
 
 if cfg.output.separateRunFolder
     timeStamp = datetime('now', 'Format', cfg.output.runFolderTimestampFormat);
@@ -57,29 +55,21 @@ end
 
 function savedFile = localSaveInterruption(cutInfo, config, runDir)
 savedFile = struct('textFile', '', 'imageFile', '');
-
-if exist(runDir, 'dir') ~= 7
-    mkdir(runDir);
-end
+localEnsureDir(runDir);
 
 if localShouldSave(config, 'saveInterruptionText', true)
-    textFile = fullfile(runDir, 'interruption_summary.txt');
-    localWriteInterruptionSummary(textFile, cutInfo);
-    savedFile.textFile = textFile;
+    savedFile.textFile = fullfile(runDir, 'interruption_summary.txt');
+    localWriteInterruptionSummary(savedFile.textFile, cutInfo);
 end
 
 if localShouldSave(config, 'saveInterruptionImage', true)
-    imageFile = fullfile(runDir, 'interruption_layout.jpg');
-    layoutImage = localBuildLayoutImage(cutInfo);
-    imwrite(layoutImage, imageFile, 'jpg');
-    savedFile.imageFile = imageFile;
+    savedFile.imageFile = fullfile(runDir, 'interruption_layout.jpg');
+    imwrite(localBuildLayoutImage(cutInfo), savedFile.imageFile, 'jpg');
 end
 end
 
 function outputFile = localSaveImage(imgBP, cfg, outputDir)
-if exist(outputDir, 'dir') ~= 7
-    mkdir(outputDir);
-end
+localEnsureDir(outputDir);
 
 baseName = sprintf('%s_%s_%d_%g', ...
     cfg.output.filePrefix, ...
@@ -113,23 +103,18 @@ savedFile = struct( ...
         'contour', '', ...
         'rangeProfile', '', ...
         'azimuthProfile', ''));
-
-if exist(runDir, 'dir') ~= 7
-    mkdir(runDir);
-end
+localEnsureDir(runDir);
 
 if config.output.savePointAnalysisMat
-    matFile = fullfile(runDir, 'point_analysis_result.mat');
+    savedFile.matFile = fullfile(runDir, 'point_analysis_result.mat');
     pointResult = anaResult; %#ok<NASGU>
     pointMeta = anaInfo; %#ok<NASGU>
-    save(matFile, 'pointResult', 'pointMeta');
-    savedFile.matFile = matFile;
+    save(savedFile.matFile, 'pointResult', 'pointMeta');
 end
 
 if config.output.savePointAnalysisText
-    txtFile = fullfile(runDir, 'point_analysis_summary.txt');
-    localWritePointSummary(txtFile, anaResult, anaInfo);
-    savedFile.textFile = txtFile;
+    savedFile.textFile = fullfile(runDir, 'point_analysis_summary.txt');
+    localWritePointSummary(savedFile.textFile, anaResult, anaInfo);
 end
 
 if localShouldSavePointImages(config) ...
@@ -149,11 +134,19 @@ if isstruct(config) && isfield(config, 'output') ...
 end
 end
 
-function localWriteInterruptionSummary(filePath, cutInfo)
-fid = fopen(filePath, 'w');
-if fid < 0
-    error('无法写入文件：%s', filePath);
+function tf = localShouldSavePointImages(config)
+tf = config.output.savePointAnalysisImage;
+if tf && isfield(config, 'analysis') ...
+        && isstruct(config.analysis) ...
+        && isfield(config.analysis, 'pointAnaCfg') ...
+        && isstruct(config.analysis.pointAnaCfg) ...
+        && isfield(config.analysis.pointAnaCfg, 'showFigures')
+    tf = tf && config.analysis.pointAnaCfg.showFigures;
 end
+end
+
+function localWriteInterruptionSummary(filePath, cutInfo)
+fid = localOpenTextFile(filePath);
 closeGuard = onCleanup(@() fclose(fid)); %#ok<NASGU>
 
 fprintf(fid, 'Interruption Summary\n');
@@ -225,17 +218,6 @@ boundaryIdx = boundaryIdx(boundaryIdx >= 1 & boundaryIdx <= numAzSamples);
 layoutImage(:, boundaryIdx, :) = 255;
 end
 
-function tf = localShouldSavePointImages(config)
-tf = config.output.savePointAnalysisImage;
-if tf && isfield(config, 'analysis') ...
-        && isstruct(config.analysis) ...
-        && isfield(config.analysis, 'pointAnaCfg') ...
-        && isstruct(config.analysis.pointAnaCfg) ...
-        && isfield(config.analysis.pointAnaCfg, 'showFigures')
-    tf = tf && config.analysis.pointAnaCfg.showFigures;
-end
-end
-
 function imageFiles = localSavePointImages(runDir, anaResult)
 imageFiles = struct( ...
     'upslice', fullfile(runDir, 'point_analysis_upslice.jpg'), ...
@@ -244,9 +226,11 @@ imageFiles = struct( ...
     'azimuthProfile', fullfile(runDir, 'point_analysis_azimuth_profile.jpg'));
 
 localWriteUpslice(imageFiles.upslice, anaResult.upSlice);
-localWriteContour(imageFiles.contour, anaResult.upSlice);
-localWriteProfile(imageFiles.rangeProfile, anaResult.range.profile, '距离向剖面图', '距离向（采样点）');
-localWriteProfile(imageFiles.azimuthProfile, anaResult.azimuth.profile, '方位向剖面图', '方位向（采样点）');
+localWriteFigure(imageFiles.contour, @() localRenderContour(anaResult.upSlice));
+localWriteFigure(imageFiles.rangeProfile, ...
+    @() localRenderProfile(anaResult.range.profile, '距离向剖面图', '距离向（采样点）'));
+localWriteFigure(imageFiles.azimuthProfile, ...
+    @() localRenderProfile(anaResult.azimuth.profile, '方位向剖面图', '方位向（采样点）'));
 end
 
 function localWriteUpslice(filePath, upSlice)
@@ -258,45 +242,8 @@ end
 imwrite(upSliceAbs, filePath, 'jpg');
 end
 
-function localWriteContour(filePath, upSlice)
-fig = figure('Visible', 'off', 'Color', 'w');
-closeGuard = onCleanup(@() close(fig)); %#ok<NASGU>
-
-contour(abs(upSlice));
-axis image;
-colormap jet;
-xlabel('距离向（采样点）');
-ylabel('方位向（采样点）');
-title('目标轮廓图');
-
-localExportFigure(fig, filePath);
-end
-
-function localWriteProfile(filePath, profile, figName, xLabelText)
-profileDb = localToDb(profile);
-[peakValues, peakIndices] = localPeakMark(profileDb);
-
-fig = figure('Visible', 'off', 'Color', 'w');
-closeGuard = onCleanup(@() close(fig)); %#ok<NASGU>
-
-plot(profileDb, 'b');
-hold on;
-plot(peakIndices, peakValues, 'r*');
-hold off;
-grid on;
-axis tight;
-xlabel(xLabelText);
-ylabel('幅度（dB）');
-title(figName);
-
-localExportFigure(fig, filePath);
-end
-
 function localWritePointSummary(filePath, result, meta)
-fid = fopen(filePath, 'w');
-if fid < 0
-    error('无法写入文件：%s', filePath);
-end
+fid = localOpenTextFile(filePath);
 closeGuard = onCleanup(@() fclose(fid)); %#ok<NASGU>
 
 fprintf(fid, 'Point Analysis Summary\n');
@@ -372,6 +319,60 @@ end
 fprintf(fid, '\n');
 end
 
+function localWriteFigure(filePath, renderFcn)
+fig = figure('Visible', 'off', 'Color', 'w');
+closeGuard = onCleanup(@() close(fig)); %#ok<NASGU>
+renderFcn();
+localExportFigure(fig, filePath);
+end
+
+function localRenderContour(upSlice)
+contour(abs(upSlice));
+axis image;
+colormap jet;
+xlabel('距离向（采样点）');
+ylabel('方位向（采样点）');
+title('目标轮廓图');
+end
+
+function localRenderProfile(profile, figName, xLabelText)
+profileDb = localToDb(profile);
+[peakValues, peakIndices] = localPeakMark(profileDb);
+
+plot(profileDb, 'b');
+hold on;
+plot(peakIndices, peakValues, 'r*');
+hold off;
+grid on;
+axis tight;
+xlabel(xLabelText);
+ylabel('幅度（dB）');
+title(figName);
+end
+
+function localExportFigure(fig, filePath)
+warnState = warning;
+warnCleanup = onCleanup(@() warning(warnState)); %#ok<NASGU>
+warning('off', 'all');
+exportgraphics(fig, filePath, 'Resolution', 200);
+if exist(filePath, 'file') ~= 2
+    error('bp_output_pipeline:ExportFailed', '未能导出图片：%s', filePath);
+end
+end
+
+function fid = localOpenTextFile(filePath)
+fid = fopen(filePath, 'w');
+if fid < 0
+    error('bp_output_pipeline:FileOpenFailed', '无法写入文件：%s', filePath);
+end
+end
+
+function localEnsureDir(targetDir)
+if exist(targetDir, 'dir') ~= 7
+    mkdir(targetDir);
+end
+end
+
 function profileDb = localToDb(profile)
 profileDb = 20 * log10(abs(profile(:)) + eps);
 end
@@ -392,16 +393,6 @@ end
 peakValues = profileDb(peakIndices);
 end
 
-function localExportFigure(fig, filePath)
-warnState = warning;
-warnCleanup = onCleanup(@() warning(warnState)); %#ok<NASGU>
-warning('off', 'all');
-exportgraphics(fig, filePath, 'Resolution', 200);
-if exist(filePath, 'file') ~= 2
-    error('bp_output_pipeline:ExportFailed', '未能导出图片：%s', filePath);
-end
-end
-
 function localWriteField(fid, s, fieldName, valueFmt)
 if isfield(s, fieldName)
     fprintf(fid, ['%s = ' valueFmt '\n'], fieldName, s.(fieldName));
@@ -417,4 +408,3 @@ else
     txt = char(string(value));
 end
 end
-

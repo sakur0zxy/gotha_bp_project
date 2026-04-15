@@ -1,6 +1,5 @@
 function [anaResult, anaInfo] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo)
 %BP_RUN_POINT_ANALYSIS 组织点目标分析输入并调用分析函数。
-
 [scriptFile, scriptSource] = localResolvePointAnalysisFile(pathInfo);
 
 Br = localPickValue(config.analysis.physics.Br, radar.bandwidthHz, NaN);
@@ -93,7 +92,6 @@ end
 
 stepDist = hypot(hypot(diff(x), diff(y)), diff(z));
 stepDist = stepDist(isfinite(stepDist) & stepDist > 0);
-
 if isempty(stepDist)
     prf = [];
     return;

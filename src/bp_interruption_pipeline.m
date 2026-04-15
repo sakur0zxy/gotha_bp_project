@@ -1,4 +1,4 @@
-﻿function [echoCut, cutInfo] = bp_interruption_pipeline(echoData, track, interCfg)
+function [echoCut, cutInfo] = bp_interruption_pipeline(echoData, track, interCfg)
 %BP_INTERRUPTION_PIPELINE 生成间断采样布局并输出间断后的回波矩阵。
 % 输入：
 %   echoData  原始回波矩阵。
@@ -14,13 +14,12 @@ missingRatio = interCfg.missingRatio;
 totalMissing = round(numAzSamples * missingRatio);
 totalValid = numAzSamples - totalMissing;
 
-assert(totalValid >= numSegments, ...
-    '缺失率过大，每段至少需要保留 1 个采样点。');
+assert(totalValid >= numSegments, '缺失率过大，每段至少需要保留 1 个采样点。');
 
 echoCut = echoData;
 meanStep = localEstimateMeanStep(track);
-randomSeedUsed = [];
 constraintInfo = localBuildConstraintInfo(numAzSamples, numSegments, totalMissing, meanStep);
+randomSeedUsed = [];
 
 switch modeName
     case 'tail_gap'
@@ -28,8 +27,7 @@ switch modeName
         gapMaxSamples = blockLengths - 1;
         gapLengths = localDistributeDeterministic(totalMissing, gapMaxSamples);
         segmentLengths = blockLengths - gapLengths;
-        [activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx] = ...
-            localBuildTailGapLayout(blockLengths, segmentLengths);
+        layoutInfo = localBuildTailGapLayout(blockLengths, segmentLengths);
 
     case 'random_gap'
         numGaps = numSegments - 1;
@@ -55,37 +53,16 @@ switch modeName
             numGaps, totalMissing, constraintInfo.gapMinSamples, ...
             constraintInfo.gapMaxSamples, interCfg.randomSeed);
         segmentLengths = localBalancedLengths(totalValid, numSegments);
-        [activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx] = ...
-            localBuildRandomGapLayout(segmentLengths, gapLengths);
+        layoutInfo = localBuildRandomGapLayout(segmentLengths, gapLengths);
 
     otherwise
         error('bp_interruption_pipeline:UnsupportedMode', '不支持的间断模式：%s', modeName);
 end
 
-for k = 1:numel(gapStartIdx)
-    if gapStartIdx(k) <= gapEndIdx(k)
-        echoCut(:, gapStartIdx(k):gapEndIdx(k)) = 0;
-    end
-end
-
-cutInfo = struct();
-cutInfo.mode = modeName;
-cutInfo.numAzSamples = numAzSamples;
-cutInfo.numSegments = numSegments;
-cutInfo.missingRatio = missingRatio;
-cutInfo.totalMissingSamples = totalMissing;
-cutInfo.totalValidSamples = totalValid;
-cutInfo.meanAzimuthStep_m = meanStep;
-cutInfo.segmentLengthsSamples = segmentLengths;
-cutInfo.segmentStartIndices = segmentStartIdx;
-cutInfo.segmentEndIndices = segmentEndIdx;
-cutInfo.gapLengthsSamples = gapEndIdx - gapStartIdx + 1;
-cutInfo.gapLengthsMeters = cutInfo.gapLengthsSamples * meanStep;
-cutInfo.gapStartIndices = gapStartIdx;
-cutInfo.gapEndIndices = gapEndIdx;
-cutInfo.activeAzIndices = activeAzIndices;
-cutInfo.randomSeedUsed = randomSeedUsed;
-cutInfo.constraintInfo = constraintInfo;
+echoCut = localApplyGaps(echoCut, layoutInfo.gapStartIndices, layoutInfo.gapEndIndices);
+cutInfo = localBuildCutInfo( ...
+    modeName, numAzSamples, numSegments, missingRatio, totalMissing, totalValid, ...
+    meanStep, segmentLengths, layoutInfo, randomSeedUsed, constraintInfo);
 end
 
 function meanStep = localEstimateMeanStep(track)
@@ -246,8 +223,7 @@ if ~isfinite(seed) || seed <= 0
 end
 end
 
-function [activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx] = ...
-        localBuildTailGapLayout(blockLengths, segmentLengths)
+function layoutInfo = localBuildTailGapLayout(blockLengths, segmentLengths)
 numSegments = numel(blockLengths);
 activeAzIndices = zeros(1, sum(segmentLengths));
 segmentStartIdx = zeros(1, numSegments);
@@ -261,6 +237,7 @@ for segIdx = 1:numSegments
     keepStart = cursor;
     keepEnd = cursor + segmentLengths(segIdx) - 1;
     keepCount = segmentLengths(segIdx);
+
     segmentStartIdx(segIdx) = keepStart;
     segmentEndIdx(segIdx) = keepEnd;
     activeAzIndices(writePos:writePos + keepCount - 1) = keepStart:keepEnd;
@@ -270,10 +247,11 @@ for segIdx = 1:numSegments
     gapEndIdx(segIdx) = cursor + blockLengths(segIdx) - 1;
     cursor = gapEndIdx(segIdx) + 1;
 end
+
+layoutInfo = localPackLayout(activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx);
 end
 
-function [activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx] = ...
-        localBuildRandomGapLayout(segmentLengths, gapLengths)
+function layoutInfo = localBuildRandomGapLayout(segmentLengths, gapLengths)
 numSegments = numel(segmentLengths);
 numGaps = numel(gapLengths);
 
@@ -289,6 +267,7 @@ for segIdx = 1:numSegments
     keepStart = cursor;
     keepEnd = cursor + segmentLengths(segIdx) - 1;
     keepCount = segmentLengths(segIdx);
+
     segmentStartIdx(segIdx) = keepStart;
     segmentEndIdx(segIdx) = keepEnd;
     activeAzIndices(writePos:writePos + keepCount - 1) = keepStart:keepEnd;
@@ -301,5 +280,48 @@ for segIdx = 1:numSegments
         cursor = gapEndIdx(segIdx) + 1;
     end
 end
+
+layoutInfo = localPackLayout(activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx);
 end
 
+function layoutInfo = localPackLayout(activeAzIndices, segmentStartIdx, segmentEndIdx, gapStartIdx, gapEndIdx)
+layoutInfo = struct();
+layoutInfo.activeAzIndices = activeAzIndices;
+layoutInfo.segmentStartIndices = segmentStartIdx;
+layoutInfo.segmentEndIndices = segmentEndIdx;
+layoutInfo.gapStartIndices = gapStartIdx;
+layoutInfo.gapEndIndices = gapEndIdx;
+end
+
+function echoCut = localApplyGaps(echoCut, gapStartIdx, gapEndIdx)
+for k = 1:numel(gapStartIdx)
+    if gapStartIdx(k) <= gapEndIdx(k)
+        echoCut(:, gapStartIdx(k):gapEndIdx(k)) = 0;
+    end
+end
+end
+
+function cutInfo = localBuildCutInfo( ...
+        modeName, numAzSamples, numSegments, missingRatio, totalMissing, totalValid, ...
+        meanStep, segmentLengths, layoutInfo, randomSeedUsed, constraintInfo)
+gapLengths = layoutInfo.gapEndIndices - layoutInfo.gapStartIndices + 1;
+
+cutInfo = struct();
+cutInfo.mode = modeName;
+cutInfo.numAzSamples = numAzSamples;
+cutInfo.numSegments = numSegments;
+cutInfo.missingRatio = missingRatio;
+cutInfo.totalMissingSamples = totalMissing;
+cutInfo.totalValidSamples = totalValid;
+cutInfo.meanAzimuthStep_m = meanStep;
+cutInfo.segmentLengthsSamples = segmentLengths;
+cutInfo.segmentStartIndices = layoutInfo.segmentStartIndices;
+cutInfo.segmentEndIndices = layoutInfo.segmentEndIndices;
+cutInfo.gapLengthsSamples = gapLengths;
+cutInfo.gapLengthsMeters = gapLengths * meanStep;
+cutInfo.gapStartIndices = layoutInfo.gapStartIndices;
+cutInfo.gapEndIndices = layoutInfo.gapEndIndices;
+cutInfo.activeAzIndices = layoutInfo.activeAzIndices;
+cutInfo.randomSeedUsed = randomSeedUsed;
+cutInfo.constraintInfo = constraintInfo;
+end
