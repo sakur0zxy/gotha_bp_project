@@ -60,28 +60,28 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IMG-01 | TBD | Pending |
-| IMG-02 | TBD | Pending |
-| IMG-03 | TBD | Pending |
-| RCV-01 | TBD | Pending |
-| RCV-02 | TBD | Pending |
-| RCV-03 | TBD | Pending |
-| EVL-01 | TBD | Pending |
-| EVL-02 | TBD | Pending |
-| EVL-03 | TBD | Pending |
-| EVL-04 | TBD | Pending |
-| EVL-05 | TBD | Pending |
-| QLT-01 | TBD | Pending |
-| QLT-02 | TBD | Pending |
-| QLT-03 | TBD | Pending |
-| REP-01 | TBD | Pending |
-| REP-02 | TBD | Pending |
+| IMG-01 | Phase 2 | Pending |
+| IMG-02 | Phase 1 | Pending |
+| IMG-03 | Phase 2 | Pending |
+| RCV-01 | Phase 3 | Pending |
+| RCV-02 | Phase 3 | Pending |
+| RCV-03 | Phase 4 | Pending |
+| EVL-01 | Phase 4 | Pending |
+| EVL-02 | Phase 4 | Pending |
+| EVL-03 | Phase 4 | Pending |
+| EVL-04 | Phase 4 | Pending |
+| EVL-05 | Phase 4 | Pending |
+| QLT-01 | Phase 1 | Pending |
+| QLT-02 | Phase 5 | Pending |
+| QLT-03 | Phase 5 | Pending |
+| REP-01 | Phase 1 | Pending |
+| REP-02 | Phase 2 | Pending |
 
 **Coverage:**
 - v1 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16 ⚠️
+- Mapped to phases: 16
+- Unmapped: 0 (all mapped)
 
 ---
 *Requirements defined: 2026-04-18*
-*Last updated: 2026-04-18 after initial definition*
+*Last updated: 2026-04-18 after roadmap creation*
