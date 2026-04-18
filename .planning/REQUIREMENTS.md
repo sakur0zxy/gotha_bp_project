@@ -8,7 +8,7 @@
 ### Baseline Imaging
 
 - [ ] **IMG-01**: 研究者可以从统一的 MATLAB 入口运行方位向数据间断条件下的 GOTCHA BP 成像流程
-- [ ] **IMG-02**: 研究者可以通过配置覆盖设置间断模式、分段数、缺失率、间断长度约束和随机种子，而不需要修改生产源码
+- [x] **IMG-02**: 研究者可以通过配置覆盖设置间断模式、分段数、缺失率、间断长度约束和随机种子，而不需要修改生产源码
 - [ ] **IMG-03**: 每次基线成像运行都会生成独立输出目录，并保存间断摘要、成像结果和关键运行元数据
 
 ### Recovery
@@ -27,13 +27,13 @@
 
 ### Quality Assurance
 
-- [ ] **QLT-01**: 非法或不一致的配置在进入昂贵计算前就会被校验并报错
+- [x] **QLT-01**: 非法或不一致的配置在进入昂贵计算前就会被校验并报错
 - [ ] **QLT-02**: 开发者可以运行自动化检查来覆盖配置校验、间断布局逻辑、随机种子复现和关键链路 smoke path
 - [ ] **QLT-03**: 开发者可以在不修改生产源码的前提下运行缩小数据规模的恢复与对比回归用例
 
 ### Reproducibility
 
-- [ ] **REP-01**: 研究者只依赖仓库内文档即可了解数据放置方式、运行命令和预期输出
+- [x] **REP-01**: 研究者只依赖仓库内文档即可了解数据放置方式、运行命令和预期输出
 - [ ] **REP-02**: 保存的运行目录和元数据足以复现一次 `random_gap` 实验
 
 ## v2 Requirements
@@ -61,7 +61,7 @@
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | IMG-01 | Phase 2 | Pending |
-| IMG-02 | Phase 1 | Pending |
+| IMG-02 | Phase 1 | Complete |
 | IMG-03 | Phase 2 | Pending |
 | RCV-01 | Phase 3 | Pending |
 | RCV-02 | Phase 3 | Pending |
@@ -71,10 +71,10 @@
 | EVL-03 | Phase 4 | Pending |
 | EVL-04 | Phase 4 | Pending |
 | EVL-05 | Phase 4 | Pending |
-| QLT-01 | Phase 1 | Pending |
+| QLT-01 | Phase 1 | Complete |
 | QLT-02 | Phase 5 | Pending |
 | QLT-03 | Phase 5 | Pending |
-| REP-01 | Phase 1 | Pending |
+| REP-01 | Phase 1 | Complete |
 | REP-02 | Phase 2 | Pending |
 
 **Coverage:**
@@ -84,4 +84,4 @@
 
 ---
 *Requirements defined: 2026-04-18*
-*Last updated: 2026-04-18 after roadmap creation*
+*Last updated: 2026-04-18 after Phase 1 completion*

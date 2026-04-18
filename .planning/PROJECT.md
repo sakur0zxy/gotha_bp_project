@@ -15,10 +15,10 @@
 - ✅ 工程已经能够从 GOTCHA 数据文件加载轨迹、回波与雷达参数，并构造 BP 成像所需的基础输入链路 - existing
 - ✅ 工程已经能够生成 `tail_gap` / `random_gap` 方位向间断采样，并执行间断条件下的 BP 成像 - existing
 - ✅ 工程已经能够输出成像结果、间断摘要、点目标分析结果与运行目录元数据 - existing
+- ✅ Phase 1 已固定实验基线壳层：严格配置覆盖、显式 `dataRoot`、headless 默认、notebook wrapper 和最小运行文档 - Phase 1
 
 ### Active
 
-- [ ] 将现有 GOTCHA BP Matlab 工程整理为可复现的实验项目，形成稳定的输入、配置、输出和复现实验约定
 - [ ] 将方位向数据间断条件下的 BP 成像流程作为可信实验基线固定下来
 - [ ] 将压缩感知恢复流程与 BP 成像主流程整合为单次可重复运行的对比实验
 - [ ] 以成像结果为主要验收依据，建立“主瓣宽度接近完整数据、旁瓣不明显恶化”的恢复效果判据
@@ -34,8 +34,9 @@
 
 - 当前代码库是 brownfield 项目，已经有 `.planning/codebase/` 映射文档，可直接作为后续计划和执行的上下文基线
 - 核心执行链路位于 `main_gotha_bp.m` 与 `src/`，现有能力覆盖数据加载、间断采样、BP 成像、点目标分析和结果输出
-- 工作区中已经存在 `cs_echo_recovery/` 压缩感知恢复实验模块雏形，但它仍需要被纳入统一的可复现实验约定、测试与结果判据中
+- `cs_echo_recovery/` 源码已纳入仓库，并与主流程共享严格配置覆盖语义；结果目录默认不纳入版本控制
 - 数据依赖是外部 GOTCHA `.mat` 文件集合，当前路径发现依赖 `config/default_config.m` 和 `src/bp_data_pipeline.m` 的约定式查找
+- Phase 1 已把数据路径规则收敛为“显式 `dataRoot` 优先，候选目录兜底”，并把正式主流程默认值切到 headless
 - 成功判据已明确为图像域优先，而不是只看回波域误差：恢复后图像主瓣宽度应接近完整数据，旁瓣不能明显恶化
 - 当前工作树里存在与初始化无关的本地改动和未跟踪文件，初始化过程必须只增量写入项目规划文档，不覆盖实验代码
 
@@ -51,11 +52,11 @@
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| 以 brownfield 整理而不是重写方式推进项目 | 现有 MATLAB 算法实现和实验入口已经具备高价值，不应在 v1 阶段推倒重来 | ⏳ Pending |
-| 以图像域质量作为压缩感知恢复的主要验收标准 | 用户明确要求以恢复后成像结果为准，核心指标是主瓣宽度与旁瓣表现 | ⏳ Pending |
-| v1 聚焦方位向间断 BP、恢复整合、配置校验、测试和结果对比 | 这些任务共同决定项目能否成为可复现实验项目 | ⏳ Pending |
-| GUI 不进入 v1 范围 | 当前阶段不需要界面层，算法和实验可信度优先 | ⏳ Pending |
-| Python 重写不进入 v1 范围 | 重写会稀释当前科研目标，并破坏对现有 MATLAB 资产的复用效率 | ⏳ Pending |
+| 以 brownfield 整理而不是重写方式推进项目 | 现有 MATLAB 算法实现和实验入口已经具备高价值，不应在 v1 阶段推倒重来 | ✅ Validated in Phase 1 |
+| 以图像域质量作为压缩感知恢复的主要验收标准 | 用户明确要求以恢复后成像结果为准，核心指标是主瓣宽度与旁瓣表现 | ✅ Confirmed |
+| v1 聚焦方位向间断 BP、恢复整合、配置校验、测试和结果对比 | 这些任务共同决定项目能否成为可复现实验项目 | ✅ Active |
+| GUI 不进入 v1 范围 | 当前阶段不需要界面层，算法和实验可信度优先 | ✅ Confirmed |
+| Python 重写不进入 v1 范围 | 重写会稀释当前科研目标，并破坏对现有 MATLAB 资产的复用效率 | ✅ Confirmed |
 
 ## Evolution
 
@@ -75,4 +76,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-18 after initialization*
+*Last updated: 2026-04-18 after Phase 1 completion*

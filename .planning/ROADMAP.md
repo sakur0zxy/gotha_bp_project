@@ -12,7 +12,7 @@
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: 实验基线与配置契约** - 固化数据入口、配置边界和基础运行说明
+- [x] **Phase 1: 实验基线与配置契约** - 固化数据入口、配置边界和基础运行说明
 - [ ] **Phase 2: 间断 BP 成像基线** - 稳定方位向间断条件下的 BP 成像与可追溯输出
 - [ ] **Phase 3: 压缩感知恢复链路** - 将恢复算法整理进统一实验入口并保证观测样本约束
 - [ ] **Phase 4: 图像域评估与结果对比** - 以完整数据成像为基线建立恢复效果判据和对比产物
@@ -31,9 +31,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: 收紧主流程与恢复流程的配置模型，明确允许覆盖的字段和失败语义
-- [ ] 01-02: 规范数据路径发现、运行入口和输出目录约定
-- [ ] 01-03: 补齐基线实验说明文档与最小运行示例
+- [x] 01-01: 收紧主流程与恢复流程的配置模型，明确允许覆盖的字段和失败语义
+- [x] 01-02: 规范数据路径发现、运行入口和输出目录约定
+- [x] 01-03: 补齐基线实验说明文档与最小运行示例
 
 ### Phase 2: 间断 BP 成像基线
 **Goal**: 把方位向间断条件下的 BP 成像固定为可信、可追溯、可复现的实验基线。
@@ -101,7 +101,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. 实验基线与配置契约 | 0/3 | Not started | - |
+| 1. 实验基线与配置契约 | 3/3 | Complete | 2026-04-18 |
 | 2. 间断 BP 成像基线 | 0/3 | Not started | - |
 | 3. 压缩感知恢复链路 | 0/3 | Not started | - |
 | 4. 图像域评估与结果对比 | 0/3 | Not started | - |
