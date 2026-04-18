@@ -1,0 +1,33 @@
+%% 最小恢复流程示例
+% 通过 csCfg 覆盖恢复实验参数，不要直接修改 cs_default_config.m 或 default_config.m。
+
+projectRoot = fileparts(fileparts(mfilename('fullpath')));
+addpath(projectRoot);
+addpath(fullfile(projectRoot, 'cs_echo_recovery'));
+
+csCfg = struct();
+
+% 推荐：通过 csCfg.project 传递主流程配置覆盖。
+csCfg.project = struct( ...
+    'path', struct('dataRoot', 'E:/path/to/gotcha_BP'));
+
+% 可选：覆盖间断参数。
+% csCfg.project.interruption = struct( ...
+%     'mode', 'random_gap', ...
+%     'numSegments', 5, ...
+%     'missingRatio', 0.1, ...
+%     'randomSeed', 42);
+%
+% 可选：覆盖恢复参数。
+% csCfg.recovery = struct( ...
+%     'maxIter', 200, ...
+%     'lambda1D', 0.01, ...
+%     'lambda2D', 0.005);
+%
+% 可选：只跑一种恢复方法。
+% csCfg.method = struct( ...
+%     'run1D', true, ...
+%     'run2D', false);
+
+result = run_cs_echo_recovery_demo(csCfg);
+disp(result.paths.runDir);

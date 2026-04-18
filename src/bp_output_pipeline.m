@@ -135,14 +135,7 @@ end
 end
 
 function tf = localShouldSavePointImages(config)
-tf = config.output.savePointAnalysisImage;
-if tf && isfield(config, 'analysis') ...
-        && isstruct(config.analysis) ...
-        && isfield(config.analysis, 'pointAnaCfg') ...
-        && isstruct(config.analysis.pointAnaCfg) ...
-        && isfield(config.analysis.pointAnaCfg, 'showFigures')
-    tf = tf && config.analysis.pointAnaCfg.showFigures;
-end
+tf = localShouldSave(config, 'savePointAnalysisImage', false);
 end
 
 function localWriteInterruptionSummary(filePath, cutInfo)

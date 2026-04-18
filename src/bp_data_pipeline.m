@@ -28,11 +28,23 @@ end
 
 function dataRoot = localFindDataRoot(cfg, context)
 firstFileName = sprintf(cfg.general.dataFilePattern, 1);
+
+if ~isempty(cfg.path.dataRoot)
+    dataRoot = localResolveDataRoot(cfg.path.dataRoot, context.workspaceRoot);
+    candidateFile = fullfile(dataRoot, firstFileName);
+    if exist(candidateFile, 'file') ~= 2
+        error('bp_data_pipeline:ExplicitDataRootMissing', ...
+            '显式数据根目录 %s 中未找到数据文件 %s；不会回退到 cfg.path.dataRootCandidates。', ...
+            dataRoot, firstFileName);
+    end
+    return;
+end
+
 candidateRelPaths = cfg.path.dataRootCandidates;
 
 dataRoot = '';
 for idx = 1:numel(candidateRelPaths)
-    candidateRoot = fullfile(context.workspaceRoot, candidateRelPaths{idx});
+    candidateRoot = localResolveDataRoot(candidateRelPaths{idx}, context.workspaceRoot);
     candidateFile = fullfile(candidateRoot, firstFileName);
     if exist(candidateFile, 'file') == 2
         dataRoot = candidateRoot;
@@ -40,8 +52,25 @@ for idx = 1:numel(candidateRelPaths)
     end
 end
 
-assert(~isempty(dataRoot), ...
-    '未找到数据文件 %s，请检查 cfg.path.dataRootCandidates。', firstFileName);
+if isempty(dataRoot)
+    error('bp_data_pipeline:DataRootNotFound', ...
+        '未找到数据文件 %s。请设置 cfg.path.dataRoot，或检查 cfg.path.dataRootCandidates。', ...
+        firstFileName);
+end
+end
+
+function dataRoot = localResolveDataRoot(rawPath, workspaceRoot)
+pathText = char(string(rawPath));
+if localIsAbsolutePath(pathText)
+    dataRoot = pathText;
+else
+    dataRoot = fullfile(workspaceRoot, pathText);
+end
+end
+
+function tf = localIsAbsolutePath(pathText)
+tf = startsWith(pathText, '\') || startsWith(pathText, '/') ...
+    || ~isempty(regexp(pathText, '^[A-Za-z]:[\\/]', 'once'));
 end
 
 function [track, echoData, radar] = localLoadData(cfg, dataRoot)

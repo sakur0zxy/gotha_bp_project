@@ -29,8 +29,8 @@ config.interruption.randomSeed = [];
 config.iteration.J = 117 * 4;
 
 %% 显示控制
-config.display.showInterruptedEcho = true;
-config.display.showProgress = true;
+config.display.showInterruptedEcho = false;
+config.display.showProgress = false;
 config.display.progressScale = 6;
 config.display.progressUpdateInterval = 20;
 config.display.outputScale = 7;
@@ -50,6 +50,7 @@ config.output.saveInterruptionText = true;
 config.output.saveInterruptionImage = true;
 
 %% 数据路径
+config.path.dataRoot = '';
 config.path.dataRootCandidates = {'.', 'gotcha_BP'};
 
 %% 点目标分析
@@ -64,7 +65,7 @@ config.analysis.physics.lambda = [];
 config.analysis.autoDerivePRFFromTrack = true;
 config.analysis.defaultPRF = 1200;
 config.analysis.pointAnaCfg = struct( ...
-    'showFigures', true, ...
+    'showFigures', false, ...
     'enableTiltAlign', true, ...
     'tiltApplyThresholdDeg', 0.0, ...
     'tiltEdgeFraction', 0.2);
