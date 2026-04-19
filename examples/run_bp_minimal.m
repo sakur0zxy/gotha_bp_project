@@ -1,7 +1,7 @@
 %% 最小主流程示例
-% 通过配置覆盖运行 BP 主流程，不要直接修改生产源码。
-% 默认数据契约兼容 GOTCHA；如果是其它数据集，请覆盖 general.* 中的数据契约字段。
-% 建议第一次运行时只改 dataRoot，先确认主流程能正常出图。
+% 通过 userCfg 覆盖主流程配置。
+% 默认兼容 GOTCHA；其它数据集请覆盖 general.*。
+% 第一次运行建议只改 dataRoot。
 
 projectRoot = fileparts(fileparts(mfilename('fullpath')));
 addpath(projectRoot);
@@ -12,7 +12,7 @@ userCfg = struct();
 userCfg.path = struct( ...
     'dataRoot', 'E:/path/to/your_dataset_root');
 
-% 第 2 步：如果不是默认 GOTCHA 数据格式，再补数据契约。
+% 第 2 步：不是默认 GOTCHA 时，再补数据契约。
 % userCfg.general = struct( ...
 %     'numDataFiles', 2, ...
 %     'dataFilePattern', 'sar_pass_%02d.mat', ...
@@ -24,7 +24,7 @@ userCfg.path = struct( ...
 %         'echo', 'echo_matrix', ...
 %         'freq', 'freq_hz'));
 
-% 第 3 步：如需覆盖实验参数，可按字段逐层补充。
+% 第 3 步：如需调实验参数，再逐层补字段。
 % userCfg.interruption = struct( ...
 %     'mode', 'random_gap', ...
 %     'numSegments', 5, ...
@@ -39,5 +39,5 @@ userCfg.path = struct( ...
 %     'pointAnaCfg', struct('showFigures', true));
 
 result = main_gotha_bp(userCfg);
-% 第 4 步：先看输出目录和 result.image，确认主流程已经跑通。
+% 第 4 步：先看输出目录和 result.image。
 disp(result.meta.runOutput.runDir);

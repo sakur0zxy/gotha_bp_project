@@ -2,9 +2,15 @@ function pointAnaResult = point_analysis(imgBP, Br, Fr, PRF, vc, squintAngle, la
 %POINT_ANALYSIS 执行点目标剖面、旁瓣和旋转矫正分析。
 % 输入：
 %   imgBP, Br, Fr, PRF, vc, squintAngle, lambda  点目标分析所需物理量。
-%   pointAnaCfg                                  可选分析配置。
+%   pointAnaCfg                                  可选配置，常用项见 localDefaultCfg。
 % 输出：
 %   pointAnaResult                               点目标分析结果。
+%
+% 主流程：
+% 1. 截取峰值邻域并升采样
+% 2. 估计并校正倾斜
+% 3. 提取距离向/方位向剖面
+% 4. 计算 PSLR、ISLR、IRW
 if nargin < 8 || isempty(pointAnaCfg)
     pointAnaCfg = struct();
 end
@@ -31,13 +37,13 @@ end
 
 function cfg = localDefaultCfg()
 cfg = struct();
-cfg.cutH = 32;
-cfg.cutW = 32;
-cfg.upN = 16;
-cfg.showFigures = true;
-cfg.enableTiltAlign = true;
-cfg.tiltApplyThresholdDeg = 0.0;
-cfg.tiltEdgeFraction = 0.2;
+cfg.cutH = 32; % 峰值邻域裁剪高度。
+cfg.cutW = 32; % 峰值邻域裁剪宽度。
+cfg.upN = 16; % 频域零填充升采样倍数。
+cfg.showFigures = true; % 是否显示图窗。
+cfg.enableTiltAlign = true; % 是否执行倾斜校正。
+cfg.tiltApplyThresholdDeg = 0.0; % 倾角低于该值时不旋转。
+cfg.tiltEdgeFraction = 0.2; % 只用左右边缘列估计倾角。
 end
 
 function cfg = localMergeStruct(cfg, userCfg)
@@ -65,6 +71,7 @@ assert(isnumeric(cfg.tiltEdgeFraction) && isscalar(cfg.tiltEdgeFraction) ...
 end
 
 function [geom, theory] = localBuildPhysicalContext(Br, Fr, PRF, vc, squintAngle, lambda)
+% 把物理量整理成“像素间距”和“理论分辨率”两组上下文。
 c = 3e8;
 fd = 2 * vc * sin(squintAngle) / lambda;
 
@@ -82,6 +89,7 @@ end
 end
 
 function sliceData = localPrepareSliceData(imgBP, cfg)
+% 先围绕全图峰值裁一块小图，再对这块小图升采样。
 amp = abs(imgBP);
 [~, idxMax] = max(amp(:));
 [cy, cx] = ind2sub(size(amp), idxMax);
@@ -96,6 +104,7 @@ sliceData.peakInUpSliceRaw = localFindPeak(up);
 end
 
 function rotationData = localAnalyzeTiltAlignment(up, cfg)
+% 倾斜校正只作用于升采样后的局部切片。
 [tiltDeg, tiltInfo] = localEstimateTilt(up, cfg);
 rotDeg = 0;
 if cfg.enableTiltAlign && abs(tiltDeg) >= cfg.tiltApplyThresholdDeg
@@ -126,6 +135,7 @@ rotationData.analysisSource = 'rotated-corrected upsampled slice';
 end
 
 function profileData = localBuildProfiles(upAligned, upRaw, upN)
+% 主结果基于旋转后的切片，raw.* 只保留作对照。
 peakAligned = localFindPeak(upAligned);
 peakRaw = localFindPeak(upRaw);
 
@@ -299,6 +309,7 @@ up = fftshift(ifft2(fftshift(specUp)));
 end
 
 function [tiltDeg, tiltInfo] = localEstimateTilt(img, cfg)
+% 用左右边缘列的峰值轨迹拟合倾角，避免中心主瓣抬高带来的偏差。
 tiltInfo = struct();
 tiltInfo.method = 'upsampled-column-peak-edge-fit';
 tiltInfo.used = 'upsampled-column-peak-edge-fit';
@@ -494,6 +505,7 @@ metrics.IRW_m = localIRW(profile, upN, unit);
 end
 
 function val = localPSLR(profile)
+% PSLR 使用次高峰与主峰幅度比。
 signal = abs(profile(:));
 if isempty(signal) || max(signal) <= 0
     val = NaN;
@@ -515,6 +527,7 @@ end
 end
 
 function val = localISLR(profile)
+% ISLR 用主瓣外总能量与主瓣能量之比衡量旁瓣泄漏。
 signal = abs(profile(:));
 if isempty(signal) || max(signal) <= 0
     val = NaN;
@@ -538,6 +551,7 @@ end
 end
 
 function val = localIRW(profile, upN, unit)
+% IRW 取 -3 dB 交点之间的距离。
 signal = abs(profile(:));
 if isempty(signal)
     val = NaN;

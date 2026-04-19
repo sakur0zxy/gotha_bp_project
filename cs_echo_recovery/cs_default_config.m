@@ -1,51 +1,42 @@
 function cfg = cs_default_config()
 %CS_DEFAULT_CONFIG 压缩感知回波恢复模块的默认配置。
-% 输出：
-%   cfg.project   传递给现有 GOTCHA BP 工程的覆盖配置。
-%   cfg.method    控制 1D/2D 恢复方法是否运行。
-%   cfg.compare   控制成像和点目标分析对比。
-%   cfg.recovery  恢复算法参数。
-%   cfg.data      可选的数据裁剪范围。
-%   cfg.output    新模块结果目录配置。
-%
-% 理解这份配置最简单的方式是分两层看：
-% 1. cfg.project：主流程怎么跑
-% 2. cfg.method / cfg.recovery / cfg.compare / cfg.data / cfg.output：恢复流程自己怎么跑
+% cfg.project 管主流程。
+% cfg.method / recovery / compare / data / output 管恢复流程。
 
 cfg = struct();
 
-% 复用主流程完整 schema，使 csCfg.project 的严格覆盖语义与 main_gotha_bp 一致。
+% 复用主流程 schema，保证 csCfg.project 和主流程同样严格。
 cfg.project = default_config();
 
 cfg.method = struct( ...
-    'run1D', true, ...
-    'run2D', true);
+    'run1D', true, ... % true: 运行逐距离单元的 1D 方位向恢复。
+    'run2D', true); % true: 运行整幅回波的 2D 恢复。
 
-% compare 控制恢复后是否继续做成像对比与点目标分析。
+% compare 控制恢复后是否继续做成像和点目标分析。
 cfg.compare = struct( ...
-    'runImaging', true, ...
-    'runPointAnalysis', true, ...
-    'failOnPointAnalysisError', false);
+    'runImaging', true, ... % true: 对 original / interrupted / recovered_* 全部重新成像。
+    'runPointAnalysis', true, ... % true: 成像后继续做主瓣宽度、旁瓣等点目标分析。
+    'failOnPointAnalysisError', false); % true: 任一点目标分析失败就停止；false: 记录错误后继续。
 
-% recovery 是压缩感知算法自己的迭代与正则化参数。
+% recovery 是恢复算法自己的迭代和正则化参数。
 cfg.recovery = struct( ...
-    'maxIter', 200, ...
-    'tol', 1e-4, ...
-    'lambda1D', 0.01, ...
-    'lambda2D', 0.005, ...
-    'useFista', true, ...
-    'normalizeInput', true, ...
-    'verbose', true);
+    'maxIter', 200, ... % 最大迭代次数；越大越可能收敛，但运行更慢。
+    'tol', 1e-4, ... % 相邻两次解的相对变化阈值，低于它就认为收敛。
+    'lambda1D', 0.01, ... % 1D 方位向 FFT 稀疏正则强度；越大越偏向平滑/稀疏。
+    'lambda2D', 0.005, ... % 2D FFT 稀疏正则强度；作用与 lambda1D 类似，但针对整幅回波。
+    'useFista', true, ... % true: 使用 FISTA 加速；false: 退化为普通 ISTA。
+    'normalizeInput', true, ... % true: 先按最大幅值归一化，通常能让不同数据规模下更稳。
+    'verbose', true); % 是否打印迭代进度。
 
-% 留空时使用完整数据；如果你只是想做小规模 smoke 或调试，可填写索引范围。
+% 留空时使用完整数据；调试时可裁剪索引范围。
 cfg.data = struct( ...
-    'rangeIndexRange', [], ...
-    'azimuthIndexRange', []);
+    'rangeIndexRange', [], ... % 距离向索引范围；[] 表示全部，支持 [start end] 或显式索引列表。
+    'azimuthIndexRange', []); % 方位向索引范围；[] 表示全部，支持 [start end] 或显式索引列表。
 
 % 这里只控制恢复流程产物是否写入 cs_echo_recovery/results/。
 cfg.output = struct( ...
-    'enableOutput', true, ...
-    'resultsDirName', 'results', ...
-    'runFolderPrefix', 'run', ...
-    'timestampFormat', 'yyyyMMdd_HHmmss');
+    'enableOutput', true, ... % 恢复流程输出总开关；false 时只返回 result，不写文件。
+    'resultsDirName', 'results', ... % 恢复流程结果根目录名，相对 cs_echo_recovery/。
+    'runFolderPrefix', 'run', ... % 每次运行目录前缀。
+    'timestampFormat', 'yyyyMMdd_HHmmss'); % 运行目录时间戳格式。
 end

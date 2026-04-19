@@ -6,7 +6,11 @@ function [echoCut, cutInfo] = bp_interruption_pipeline(echoData, track, interCfg
 %   interCfg  间断配置。
 % 输出：
 %   echoCut   间断后的回波矩阵。
-%   cutInfo   间断布局和约束信息。
+%   cutInfo   间断布局、随机种子和约束信息。
+%
+% 支持两种模式：
+% - tail_gap：把每段缺口放到对应分块末尾。
+% - random_gap：按 gapMinMeters / gapMaxMeters 约束随机生成缺口。
 numAzSamples = size(echoData, 2);
 modeName = char(string(interCfg.mode));
 numSegments = interCfg.numSegments;
@@ -21,6 +25,7 @@ meanStep = localEstimateMeanStep(track);
 constraintInfo = localBuildConstraintInfo(numAzSamples, numSegments, totalMissing, meanStep);
 randomSeedUsed = [];
 
+% mode 只决定缺口如何排布，不改变总缺失比例。
 switch modeName
     case 'tail_gap'
         blockLengths = localBalancedLengths(numAzSamples, numSegments);
@@ -33,6 +38,7 @@ switch modeName
         numGaps = numSegments - 1;
         assert(numGaps >= 1, 'random_gap 模式至少需要 2 段保留数据。');
 
+        % 先把米级缺口约束离散化到采样点，再判断可行性。
         constraintInfo = localAnalyzeRandomGapConstraints( ...
             numAzSamples, numSegments, totalMissing, meanStep, ...
             interCfg.gapMinMeters, interCfg.gapMaxMeters);
@@ -66,6 +72,7 @@ cutInfo = localBuildCutInfo( ...
 end
 
 function meanStep = localEstimateMeanStep(track)
+% 用相邻轨迹点的三维距离均值近似方位向步长。
 x = track.X(:);
 y = track.Y(:);
 z = track.Z(:);
@@ -102,6 +109,7 @@ end
 
 function constraintInfo = localAnalyzeRandomGapConstraints( ...
         numAzSamples, numSegments, totalMissing, meanStep, gapMinMeters, gapMaxMeters)
+% gapMinMeters / gapMaxMeters 会先离散化成采样点约束。
 constraintInfo = localBuildConstraintInfo(numAzSamples, numSegments, totalMissing, meanStep);
 constraintInfo.gapMinMetersRequested = gapMinMeters;
 constraintInfo.gapMaxMetersRequested = gapMaxMeters;
@@ -151,6 +159,7 @@ msg = sprintf([ ...
 end
 
 function lengths = localBalancedLengths(totalCount, numParts)
+% 尽量平均地把 totalCount 分到 numParts 段。
 baseLen = floor(totalCount / numParts);
 extraCount = mod(totalCount, numParts);
 
@@ -161,6 +170,7 @@ end
 end
 
 function gapLengths = localDistributeDeterministic(totalMissing, gapMaxSamples)
+% tail_gap 模式下按轮转方式分配缺口长度。
 numGaps = numel(gapMaxSamples);
 gapLengths = zeros(1, numGaps);
 
@@ -187,6 +197,7 @@ end
 
 function [gapLengths, seedUsed] = localGenerateRandomGaps( ...
         numGaps, totalMissing, minGapSamples, maxGapSamples, randomSeed)
+% 在上下界内随机分配 gap 长度，并返回本次真正使用的种子。
 gapLengths = minGapSamples * ones(1, numGaps);
 remaining = totalMissing - sum(gapLengths);
 capacity = (maxGapSamples - minGapSamples) * ones(1, numGaps);
@@ -216,6 +227,7 @@ if ~isempty(seedIn)
     return;
 end
 
+% 未显式指定时，用当前时间生成一次性种子。
 timeNow = posixtime(datetime('now'));
 seed = mod(floor(timeNow * 1e6), 2^31 - 1);
 if ~isfinite(seed) || seed <= 0
@@ -224,6 +236,7 @@ end
 end
 
 function layoutInfo = localBuildTailGapLayout(blockLengths, segmentLengths)
+% 每个分块先保留数据，剩余位置统一作为尾部缺口。
 numSegments = numel(blockLengths);
 activeAzIndices = zeros(1, sum(segmentLengths));
 segmentStartIdx = zeros(1, numSegments);
@@ -252,6 +265,7 @@ layoutInfo = localPackLayout(activeAzIndices, segmentStartIdx, segmentEndIdx, ga
 end
 
 function layoutInfo = localBuildRandomGapLayout(segmentLengths, gapLengths)
+% random_gap 模式按“保留段-缺口-保留段”顺序交替拼接。
 numSegments = numel(segmentLengths);
 numGaps = numel(gapLengths);
 
@@ -306,6 +320,7 @@ function cutInfo = localBuildCutInfo( ...
         meanStep, segmentLengths, layoutInfo, randomSeedUsed, constraintInfo)
 gapLengths = layoutInfo.gapEndIndices - layoutInfo.gapStartIndices + 1;
 
+% cutInfo 是后续输出、复现实验和恢复流程共用的布局契约。
 cutInfo = struct();
 cutInfo.mode = modeName;
 cutInfo.numAzSamples = numAzSamples;

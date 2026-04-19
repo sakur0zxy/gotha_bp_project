@@ -1,5 +1,6 @@
 function varargout = bp_output_pipeline(action, varargin)
 %BP_OUTPUT_PIPELINE 统一处理输出目录、图片和摘要文件保存。
+% output.enableOutput=false 时，所有动作都只返回空结果，不写文件。
 % 用法：
 %   runOutput = bp_output_pipeline('prepare_run_dir', config, pathInfo, cutInfo)
 %   files = bp_output_pipeline('save_interruption', cutInfo, config, runDir)
@@ -26,6 +27,7 @@ if ~localIsOutputEnabled(cfg)
     return;
 end
 
+% 主流程输出统一落到 workspaceRoot/outputDirName 下。
 baseDir = fullfile(context.workspaceRoot, cfg.output.outputDirName);
 localEnsureDir(baseDir);
 
@@ -64,6 +66,7 @@ if ~localIsOutputEnabled(config) || isempty(runDir)
     return;
 end
 
+% 间断信息可以分别保存为文字摘要和布局图。
 localEnsureDir(runDir);
 
 if localShouldSave(config, 'saveInterruptionText', true)
@@ -83,6 +86,7 @@ if ~localIsOutputEnabled(cfg) || isempty(outputDir)
     return;
 end
 
+% 文件名编码了 mode / numSegments / missingRatio，便于回看历史结果。
 localEnsureDir(outputDir);
 
 baseName = sprintf('%s_%s_%d_%g', ...
@@ -121,6 +125,7 @@ if ~localIsOutputEnabled(config) || isempty(runDir)
     return;
 end
 
+% 点目标分析可分别导出 mat、文本和图像。
 localEnsureDir(runDir);
 
 if config.output.savePointAnalysisMat
@@ -220,6 +225,7 @@ end
 end
 
 function layoutImage = localBuildLayoutImage(cutInfo)
+% 绿色表示保留采样，红色表示缺失采样，白线表示边界。
 numAzSamples = cutInfo.numAzSamples;
 mask = false(1, numAzSamples);
 mask(cutInfo.activeAzIndices) = true;

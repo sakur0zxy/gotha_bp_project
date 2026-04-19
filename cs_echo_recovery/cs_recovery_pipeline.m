@@ -1,7 +1,8 @@
 function result = cs_recovery_pipeline(csCfg)
 %CS_RECOVERY_PIPELINE 串联回波恢复、成像和点目标分析实验流程。
 % 输入：
-%   csCfg  压缩感知恢复模块配置，通常来自 cs_default_config。
+%   csCfg  恢复模块配置，通常来自 cs_default_config。
+%          包含 project / method / recovery / compare / data / output 六块。
 % 输出：
 %   result 恢复结果、对比指标和输出文件路径。
 
@@ -17,12 +18,15 @@ assert(~csCfg.compare.runPointAnalysis || csCfg.compare.runImaging, ...
 paths = localSetupPaths();
 projectCfg = localBuildProjectConfig(csCfg);
 
+% 先复用主流程统一数据入口，再按 csCfg.data 可选裁剪一个更小的实验子集。
 [pathInfo, trackFull, echoFull, radarFull, dataRoot] = bp_data_pipeline(projectCfg);
 [track, echoRef, radar, selectInfo] = localSelectData(trackFull, echoFull, radarFull, csCfg.data);
 
+% 根据主流程间断配置生成观测数据和掩膜；恢复算法只看 echoCut + maskObs。
 [echoCut, cutInfo] = bp_interruption_pipeline(echoRef, track, projectCfg.interruption);
 [maskAz, maskObs] = localBuildObservedMask(size(echoRef), cutInfo.activeAzIndices);
 cutInfoFull = cs_build_full_cutinfo(track, size(echoRef, 2));
+% 输出目录管理只影响文件写入，不影响恢复与成像数值结果。
 runDir = localPrepareRunDir(paths.csRoot, csCfg.output);
 
 cases = localInitCases(csCfg.method);
@@ -128,6 +132,7 @@ paths.projectRoot = projectRoot;
 end
 
 function projectCfg = localBuildProjectConfig(csCfg)
+% csCfg.project 复用主流程同一份 schema 和校验规则，避免维护并行配置体系。
 projectCfg = default_config();
 if isfield(csCfg, 'project') && isstruct(csCfg.project) && ~isempty(csCfg.project)
     projectCfg = bp_merge_config(projectCfg, csCfg.project);
@@ -136,6 +141,7 @@ projectCfg = bp_validate_config(projectCfg);
 end
 
 function [trackOut, echoOut, radarOut, selectInfo] = localSelectData(trackIn, echoIn, radarIn, dataCfg)
+% 这里的裁剪只用于小规模实验、快速调参或测试，不改变数据契约本身。
 rangeIdx = localResolveIndexRange(dataCfg.rangeIndexRange, size(echoIn, 1));
 azIdx = localResolveIndexRange(dataCfg.azimuthIndexRange, size(echoIn, 2));
 
@@ -222,6 +228,7 @@ radarOut.deltaR = radarOut.c * pi / (radarOut.y0 * radarOut.Ts * radarOut.numRan
 end
 
 function [maskAz, maskObs] = localBuildObservedMask(dataSize, activeAzIndices)
+% maskAz 描述哪些方位位置被观测到，maskObs 是扩展到整幅回波后的二维掩膜。
 maskAz = false(1, dataSize(2));
 maskAz(activeAzIndices) = true;
 maskObs = repmat(maskAz, dataSize(1), 1);

@@ -12,7 +12,7 @@ See: `.planning/PROJECT.md` (updated 2026-04-18)
 Phase: 2 of 5 (间断 BP 成像基线)  
 Plan: 0 of 3 in current phase  
 Status: Ready to discuss  
-Last activity: 2026-04-19 - 完成 quick task「doc-onboarding-polish」，重写新人入口文档并补强关键入口注释
+Last activity: 2026-04-19 - 完成 quick task「full-comment-simplify-pass」，补齐 src 深层注释并精简全项目文档表述
 
 Progress: [#----] 20%
 
@@ -48,7 +48,8 @@ Decisions are logged in `PROJECT.md` Key Decisions table. Recent decisions affec
 - [Phase 1] 实验结果产物默认不纳入版本控制，`cs_echo_recovery/results/` 默认忽略
 - [Quick 2026-04-19] 新增 `config.output.enableOutput` 与 `csCfg.output.enableOutput`，关闭时不创建输出目录也不写实验产物
 - [Quick 2026-04-19] 数据入口新增 `dataVariableName` 与 `dataFieldMap` 契约，支持非 GOTCHA 数据集按配置接入
-- [Quick 2026-04-19] 文档入口改为新手导航结构，新增第一次运行指南并补强关键入口注释
+- [Quick 2026-04-19] 文档入口改为新手导航结构，新增第一次运行指南，并为主流程/恢复流程关键参数补齐易懂注释
+- [Quick 2026-04-19] 全项目注释统一改为短句风格，`src/` 深层链路补齐必要说明，正式文档删去重复表述
 
 ### Pending Todos
 
@@ -72,10 +73,11 @@ None yet.
 |------|------|--------|-------|
 | 2026-04-19 | output-master-switch | complete | Main and recovery outputs can now be disabled without creating directories or files |
 | 2026-04-19 | generic-dataset-contract | complete | Dataset loading is now contract-driven with configurable variable names, field maps, docs, and smoke tests |
-| 2026-04-19 | doc-onboarding-polish | complete | README, onboarding docs, and key entry comments are now newcomer-friendly |
+| 2026-04-19 | doc-onboarding-polish | complete | README and recovery docs were corrected; key config and recovery parameters now have beginner-friendly comments |
+| 2026-04-19 | full-comment-simplify-pass | complete | Deep src comments were added and project docs/comments were shortened without losing meaning |
 
 ## Session Continuity
 
 Last session: 2026-04-19  
-Stopped at: Quick tasks complete; Phase 2 still ready to discuss  
+Stopped at: Quick comment/doc pass complete; Phase 2 still ready to discuss
 Resume file: `.planning/ROADMAP.md`

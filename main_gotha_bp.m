@@ -1,14 +1,12 @@
 function result = main_gotha_bp(userConfig)
-%MAIN_GOTHA_BP 运行 GOTCHA BP 成像主流程。
+%MAIN_GOTHA_BP 运行 BP 成像主流程。
 % 输入：
-%   userConfig  可选，用于覆盖默认配置的结构体。
+%   userConfig  可选，默认配置覆盖。
 % 输出：
-%   result      包含成像结果、间断信息、点目标分析结果和输出路径。
+%   result      成像结果、间断信息、点目标分析和输出路径。
 %
-% 推荐使用方式：
-% 1. 第一次运行时先参考 examples/run_bp_minimal.m。
-% 2. 正式实验优先通过 userConfig 覆盖参数，而不是直接修改 default_config.m。
-% 3. 对新接手项目的人，最重要的输出字段通常是：
+% 默认兼容 GOTCHA，也支持满足数据契约的其它数据集。
+% 最常看的结果字段：
 %    - result.image
 %    - result.interruptionInfo
 %    - result.pointAnalysis

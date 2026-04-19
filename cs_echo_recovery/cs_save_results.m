@@ -2,7 +2,7 @@ function files = cs_save_results(result, projectCfg, ~, runDir)
 %CS_SAVE_RESULTS 保存恢复结果、对比图和点目标分析输出。
 % 输入：
 %   result      cs_recovery_pipeline 返回的结果结构体。
-%   projectCfg  现有 GOTCHA BP 工程配置。
+%   projectCfg  主流程配置，用于复用已有的点目标分析保存逻辑。
 %   csCfg       新模块配置。
 %   runDir      当前实验输出目录。
 % 输出：
@@ -89,6 +89,7 @@ end
 end
 
 function saveCfg = localBuildPointSaveConfig(projectCfg)
+% 恢复模块复用主流程已有的点目标分析导出逻辑，这里只强制打开保存开关。
 saveCfg = projectCfg;
 saveCfg.output.enableOutput = true;
 saveCfg.output.savePointAnalysisMat = true;

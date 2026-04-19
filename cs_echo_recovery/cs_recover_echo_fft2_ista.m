@@ -3,7 +3,13 @@ function [echoRec, info] = cs_recover_echo_fft2_ista(echoCut, maskObs, cfg)
 % 输入：
 %   echoCut  间断采样后的回波矩阵。
 %   maskObs  与 echoCut 同尺寸的观测掩膜，true 表示已观测。
-%   cfg      恢复参数，需包含 maxIter、tol、lambda2D 等字段。
+%   cfg      恢复参数，常用字段如下：
+%            - lambda2D: 2D FFT 稀疏正则强度，越大越偏向平滑/稀疏。
+%            - maxIter: 最大迭代次数。
+%            - tol: 相邻迭代相对变化阈值，小于它就提前停止。
+%            - useFista: true 用加速版 FISTA，false 用普通 ISTA。
+%            - normalizeInput: true 先按最大幅值归一化，便于不同量级数据共用参数。
+%            - verbose: 是否打印迭代日志。
 % 输出：
 %   echoRec  恢复后的完整回波矩阵。
 %   info     迭代信息和收敛指标。
@@ -34,6 +40,7 @@ function [echoRec, info] = localRunFista(echoCut, maskObs, lambda, proxFcn, tran
 dataClass = class(echoCut);
 maskObs = logical(maskObs);
 
+% 可选归一化只影响优化数值尺度，不改变最终恢复结果的物理量纲。
 [dataNorm, scaleValue] = localNormalizeEcho(echoCut, cfg.normalizeInput);
 obsData = dataNorm;
 
@@ -55,12 +62,14 @@ for iter = 1:cfg.maxIter
     objHistory(iter) = localObjective(xNow, obsData, maskObs, lambda, transformFcn);
 
     if cfg.useFista
+        % FISTA 在 ISTA 基础上加入动量项，通常能更快逼近收敛。
         tNow = (1 + sqrt(1 + 4 * tPrev^2)) / 2;
         yNow = xNow + ((tPrev - 1) / tNow) * (xNow - xPrev);
         yNow(maskObs) = obsData(maskObs);
         tPrev = tNow;
         yPrev = yNow;
     else
+        % 关闭 useFista 时，算法退化为普通 ISTA。
         yPrev = xNow;
     end
 

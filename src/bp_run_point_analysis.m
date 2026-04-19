@@ -1,7 +1,12 @@
 function [anaResult, anaInfo] = bp_run_point_analysis(imageBP, config, radar, track, pathInfo)
 %BP_RUN_POINT_ANALYSIS 组织点目标分析输入并调用分析函数。
+% 物理量优先级：
+% 1. 配置中显式给出的值
+% 2. 可从数据推导的值
+% 3. 兜底默认值
 [scriptFile, scriptSource] = localResolvePointAnalysisFile(pathInfo);
 
+% Br / Fr / PRF / lambda 都允许“手动优先，自动兜底”。
 Br = localPickValue(config.analysis.physics.Br, radar.bandwidthHz, NaN);
 Fr = localPickValue(config.analysis.physics.Fr, radar.bandwidthHz, NaN);
 vc = config.analysis.physics.vc;
@@ -30,6 +35,7 @@ function anaResult = localCallPointAnalysis(scriptFile, imageBP, Br, Fr, PRF, vc
 scriptDir = fileparts(scriptFile);
 originalPath = path;
 cleanup = onCleanup(@() path(originalPath)); %#ok<NASGU>
+% 临时把 point_analysis.m 所在目录放到最前，调用后再恢复原路径。
 addpath(scriptDir, '-begin');
 
 pointAnaFunc = str2func('point_analysis');
@@ -62,6 +68,7 @@ function [prf, source] = localResolvePRF(analysisCfg, track, platformSpeed)
 prf = analysisCfg.physics.PRF;
 source = 'manual';
 
+% PRF 允许先按轨迹步长估计，失败后再回退到默认值。
 if isempty(prf) && analysisCfg.autoDerivePRFFromTrack
     prf = localEstimatePRF(track, platformSpeed);
     source = 'track-derived';
