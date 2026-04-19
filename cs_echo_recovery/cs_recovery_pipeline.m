@@ -9,6 +9,8 @@ if nargin < 1 || isempty(csCfg)
     csCfg = cs_default_config();
 end
 
+localValidateCsConfig(csCfg);
+
 assert(~csCfg.compare.runPointAnalysis || csCfg.compare.runImaging, ...
     '启用点目标分析前必须先启用成像对比。');
 
@@ -107,7 +109,9 @@ result.cases = cases;
 result.summary = localBuildSummary(cases, cutInfo, selectInfo);
 result.files = cs_save_results(result, projectCfg, csCfg, runDir);
 
-fprintf('CS recovery results saved to: %s\n', runDir);
+if localIsOutputEnabled(csCfg.output)
+    fprintf('CS recovery results saved to: %s\n', runDir);
+end
 end
 
 function paths = localSetupPaths()
@@ -224,6 +228,11 @@ maskObs = repmat(maskAz, dataSize(1), 1);
 end
 
 function runDir = localPrepareRunDir(csRoot, outputCfg)
+if ~localIsOutputEnabled(outputCfg)
+    runDir = '';
+    return;
+end
+
 baseDir = fullfile(csRoot, outputCfg.resultsDirName);
 localEnsureDir(baseDir);
 
@@ -237,6 +246,22 @@ while exist(runDir, 'dir') == 7
     suffix = suffix + 1;
 end
 mkdir(runDir);
+end
+
+function localValidateCsConfig(csCfg)
+assert(isfield(csCfg, 'output') && isstruct(csCfg.output), ...
+    'csCfg.output 必须是结构体。');
+assert(isfield(csCfg.output, 'enableOutput') ...
+    && islogical(csCfg.output.enableOutput) ...
+    && isscalar(csCfg.output.enableOutput), ...
+    'csCfg.output.enableOutput 必须是逻辑标量。');
+end
+
+function tf = localIsOutputEnabled(outputCfg)
+tf = true;
+if isstruct(outputCfg) && isfield(outputCfg, 'enableOutput')
+    tf = outputCfg.enableOutput;
+end
 end
 
 function localEnsureDir(dirPath)

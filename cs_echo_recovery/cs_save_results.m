@@ -9,12 +9,13 @@ function files = cs_save_results(result, projectCfg, ~, runDir)
 %   files       各类输出文件路径。
 
 caseNames = {'original', 'interrupted', 'recovered_1d', 'recovered_2d'};
+files = localEmptyFiles(caseNames);
+if ~localIsOutputEnabled(result.csConfig.output) || isempty(runDir)
+    return;
+end
+
 summaryDir = fullfile(runDir, 'summary');
 localEnsureDir(summaryDir);
-
-files = struct();
-files.summary = struct();
-files.cases = struct();
 
 files.summary.matFile = fullfile(summaryDir, 'recovery_result.mat');
 save(files.summary.matFile, 'result', '-v7.3');
@@ -89,6 +90,7 @@ end
 
 function saveCfg = localBuildPointSaveConfig(projectCfg)
 saveCfg = projectCfg;
+saveCfg.output.enableOutput = true;
 saveCfg.output.savePointAnalysisMat = true;
 saveCfg.output.savePointAnalysisText = true;
 saveCfg.output.savePointAnalysisImage = true;
@@ -100,6 +102,43 @@ if ~isfield(saveCfg.analysis, 'pointAnaCfg') || ~isstruct(saveCfg.analysis.point
     saveCfg.analysis.pointAnaCfg = struct();
 end
 saveCfg.analysis.pointAnaCfg.showFigures = true;
+end
+
+function files = localEmptyFiles(caseNames)
+files = struct();
+files.summary = struct( ...
+    'matFile', '', ...
+    'textFile', '', ...
+    'echoFigure', '', ...
+    'imageFigure', '');
+files.cases = struct();
+for idx = 1:numel(caseNames)
+    name = caseNames{idx};
+    files.cases.(name) = struct( ...
+        'dir', '', ...
+        'imageFile', '', ...
+        'pointFiles', localEmptyPointFiles(), ...
+        'statusFile', '');
+end
+end
+
+function pointFiles = localEmptyPointFiles()
+pointFiles = struct( ...
+    'matFile', '', ...
+    'textFile', '', ...
+    'imageFile', '', ...
+    'imageFiles', struct( ...
+        'upslice', '', ...
+        'contour', '', ...
+        'rangeProfile', '', ...
+        'azimuthProfile', ''));
+end
+
+function tf = localIsOutputEnabled(outputCfg)
+tf = true;
+if isstruct(outputCfg) && isfield(outputCfg, 'enableOutput')
+    tf = outputCfg.enableOutput;
+end
 end
 
 function localWriteSummary(filePath, result, caseNames)

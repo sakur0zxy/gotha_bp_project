@@ -1,107 +1,60 @@
-# GOTCHA BP 间断采样与压缩感知恢复实验项目
+# BP 间断采样与压缩感知恢复实验项目
 
-本项目用于把现有 GOTCHA BP MATLAB 工程整理成一个可复现、可验证的科研实验项目。v1 重点不是重写算法，而是把已有的方位向间断 BP 成像和压缩感知恢复流程收敛成稳定的实验基线。
+这是一个面向个人科研实验的 MATLAB 项目。它把现有的 GOTCHA BP 工程整理成一套更容易复现、验证和扩展的实验流程，并且已经支持“任意满足输入契约的数据集”。
 
-当前正式目标：
+项目当前最关心的问题只有一个：  
+在方位向数据间断条件下，压缩感知恢复后的成像结果，能否在图像域上尽可能接近完整数据 BP 成像结果。
 
-- 在方位向数据间断条件下稳定运行 GOTCHA BP 成像
-- 通过配置覆盖控制实验参数，而不是修改生产源码
-- 将压缩感知恢复流程整理进统一入口
-- 以图像域结果作为恢复效果的主要判断依据
-- 让主瓣宽度尽量接近完整数据，旁瓣不明显恶化
+## 这个仓库适合谁
 
-当前明确不做：
+- 你第一次接触这个项目，想先跑通一遍
+- 你已经能跑 GOTCHA，想接入自己的数据集
+- 你想调实验参数，但不想直接改源码
+- 你想知道主流程、恢复流程和输出目录分别在哪里
 
-- GUI 图形界面
-- Python 重写
-- 在线服务化 / Web API
+## 第一次上手先看什么
 
-## 正式入口
+如果你是第一次打开这个仓库，推荐按下面顺序阅读：
+
+1. [docs/getting_started.md](docs/getting_started.md)  
+   说明：第一次运行指南。按步骤告诉你先准备什么、先跑哪个脚本、看到什么算正常。
+2. [examples/run_bp_minimal.m](examples/run_bp_minimal.m)  
+   说明：最小主流程示例。适合先跑完整数据加载、间断采样和 BP 成像。
+3. [examples/run_cs_recovery_minimal.m](examples/run_cs_recovery_minimal.m)  
+   说明：最小恢复流程示例。适合在主流程跑通后继续做压缩感知恢复。
+4. [docs/data_format_contract.md](docs/data_format_contract.md)  
+   说明：如果你的数据不是默认 GOTCHA 命名，先看这里。
+5. [docs/config_contract.md](docs/config_contract.md)  
+   说明：如果你想改参数、不确定该改哪里、或者遇到配置报错，查看这里。
+
+## 30 秒理解项目流程
+
+可以把整个项目理解成一条固定流水线：
+
+1. 从磁盘读取完整回波数据，并标准化成内部统一格式
+2. 在方位向上人为制造数据间断
+3. 用 BP 算法对间断数据成像，得到基线结果
+4. 对图像做点目标分析，用主瓣和旁瓣评价成像质量
+5. 用压缩感知方法恢复缺失回波，再重新成像并和完整/间断结果对比
+
+如果你只想先跑成像，看主流程入口。  
+如果你要做恢复实验，看恢复流程入口。
+
+## 两个正式入口
 
 - 主流程入口：`main_gotha_bp.m`
+  作用：完成“加载数据 -> 制造间断 -> BP 成像 -> 点目标分析 -> 保存结果”
 - 恢复流程入口：`cs_echo_recovery/run_cs_echo_recovery_demo.m`
-- 随机间断种子复用工具：`src/bp_read_seed_from_run_dir.m`
-- notebook：`main_gotha_bp.ipynb`
-  说明：只作为交互式 wrapper 调用 `main_gotha_bp.m`，不再持有第二套主流程实现。
+  作用：在主流程基础上继续完成“压缩感知恢复 -> 恢复后成像 -> 多结果对比”
 
-## 项目结构
+`main_gotha_bp.ipynb` 只是交互式 wrapper。  
+如果你要改正式逻辑，请改 `.m` 文件，不要在 notebook 里维护第二套实现。
 
-```text
-gotha_bp_project/
-├─ config/
-│  └─ default_config.m
-├─ src/
-│  ├─ bp_data_pipeline.m
-│  ├─ bp_imaging_pipeline.m
-│  ├─ bp_interruption_pipeline.m
-│  ├─ bp_merge_config.m
-│  ├─ bp_output_pipeline.m
-│  ├─ bp_read_seed_from_run_dir.m
-│  ├─ bp_run_point_analysis.m
-│  ├─ bp_validate_config.m
-│  ├─ point_analysis.m
-│  └─ point_analysis_algorithm.md
-├─ cs_echo_recovery/
-│  ├─ run_cs_echo_recovery_demo.m
-│  ├─ cs_default_config.m
-│  ├─ cs_recovery_pipeline.m
-│  ├─ cs_recover_azimuth_fft_ista.m
-│  ├─ cs_recover_echo_fft2_ista.m
-│  ├─ cs_build_full_cutinfo.m
-│  ├─ cs_save_results.m
-│  └─ README.md
-├─ docs/
-│  └─ config_contract.md
-├─ examples/
-│  ├─ run_bp_minimal.m
-│  └─ run_cs_recovery_minimal.m
-├─ main_gotha_bp.m
-└─ main_gotha_bp.ipynb
-```
+## 最快运行方式
 
-## 数据放置方式
+### 场景 A：你手里就是默认 GOTCHA 数据
 
-推荐方式是显式指定数据根目录。主流程现在支持：
-
-1. `cfg.path.dataRoot`
-   说明：首选方式。显式指定 GOTCHA 数据根目录，最适合正式实验复现。
-2. `cfg.path.dataRootCandidates`
-   说明：只有 `cfg.path.dataRoot` 为空时才会启用的兜底查找逻辑。
-
-默认兜底候选目录是工作区根目录下的：
-
-- `.`
-- `gotcha_BP`
-
-注意：
-
-- 这些路径是相对工作区根目录解析，不是相对 `gotha_bp_project/` 目录。
-- 如果设置了显式 `cfg.path.dataRoot`，程序不会再回退到 `dataRootCandidates`。
-- 如果显式路径错误，会立即报错并指出缺失文件和错误位置。
-
-## 配置契约
-
-默认配置在 [config/default_config.m](/E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project/config/default_config.m)。
-
-主流程和恢复流程都采用严格配置覆盖语义：
-
-- 未知字段立即报错
-- 错拼字段立即报错
-- 错误层级立即报错
-- 错误信息必须包含完整字段路径和错误原因
-
-例如：
-
-- 合法：`cfg.display.showProgress = true`
-- 非法：`cfg.display.showProgess = true`
-
-更完整的配置说明见 [docs/config_contract.md](/E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project/docs/config_contract.md)。
-
-## 快速开始
-
-### 1. 主流程最小示例
-
-推荐直接参考 [examples/run_bp_minimal.m](/E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project/examples/run_bp_minimal.m)。
+这是最简单的路径。你通常只需要指定数据根目录：
 
 ```matlab
 projectRoot = 'E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project';
@@ -113,9 +66,8 @@ userCfg.path = struct('dataRoot', 'E:/path/to/gotcha_BP');
 result = main_gotha_bp(userCfg);
 ```
 
-### 2. 恢复流程最小示例
-
-推荐直接参考 [examples/run_cs_recovery_minimal.m](/E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project/examples/run_cs_recovery_minimal.m)。
+第一次建议先跑主流程。  
+主流程跑通后，再运行恢复流程：
 
 ```matlab
 projectRoot = 'E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project';
@@ -128,105 +80,158 @@ csCfg.project = struct('path', struct('dataRoot', 'E:/path/to/gotcha_BP'));
 result = run_cs_echo_recovery_demo(csCfg);
 ```
 
-## 运行默认值
+### 场景 B：你的数据不是默认 GOTCHA 命名
 
-正式主流程默认采用 headless 方式：
-
-- `config.display.showInterruptedEcho = false`
-- `config.display.showProgress = false`
-- `config.analysis.pointAnaCfg.showFigures = false`
-
-这意味着：
-
-- 正式实验默认不依赖图窗交互
-- 更适合批处理、回归和远程运行
-- 如果你需要在 notebook 或手工调试时看图，可以用配置覆盖重新打开显示
-
-## 输出目录
-
-### 主流程输出
-
-主流程输出目录默认位于工作区根目录下的 `img/`，也就是 `gotha_bp_project/` 的上一级目录。
-
-常见产物包括：
-
-- `gotha_*.jpg`
-- `interruption_summary.txt`
-- `interruption_layout.jpg`
-- `point_analysis_result.mat`
-- `point_analysis_summary.txt`
-- `point_analysis_upslice.jpg`
-- `point_analysis_contour.jpg`
-- `point_analysis_range_profile.jpg`
-- `point_analysis_azimuth_profile.jpg`
-
-### 恢复流程输出
-
-恢复流程输出目录位于：
-
-- `cs_echo_recovery/results/run_yyyyMMdd_HHmmss/`
-
-常见产物包括：
-
-- `summary/recovery_result.mat`
-- `summary/recovery_metrics.txt`
-- `summary/echo_comparison.jpg`
-- `summary/image_comparison.jpg`
-- `original/`
-- `interrupted/`
-- `recovered_1d/`
-- `recovered_2d/`
-
-## 版本控制约定
-
-运行产物默认不纳入版本控制。
-
-当前仓库忽略规则至少覆盖：
-
-- `/img/`
-- `/cs_echo_recovery/results/`
-
-也就是说：
-
-- 源码、文档、配置和最小示例应纳入版本控制
-- 大量 `.mat` / `.jpg` / `.txt` 实验输出不应作为日常提交内容
-
-## 随机间断种子复用
-
-如果一次 `random_gap` 运行已经生成了输出目录，可以通过 `bp_read_seed_from_run_dir` 回读该次实验使用的随机种子：
+这时不要改算法源码，先改数据契约配置：
 
 ```matlab
-projectRoot = 'E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/gotha_bp_project';
-addpath(projectRoot);
-addpath(fullfile(projectRoot, 'src'));
+userCfg = struct();
+userCfg.path = struct('dataRoot', 'E:/path/to/your_dataset_root');
+userCfg.general = struct( ...
+    'numDataFiles', 2, ...
+    'dataFilePattern', 'sar_pass_%02d.mat', ...
+    'dataVariableName', 'sarData', ...
+    'dataFieldMap', struct( ...
+        'x', 'platform_x', ...
+        'y', 'platform_y', ...
+        'z', 'platform_z', ...
+        'echo', 'echo_matrix', ...
+        'freq', 'freq_hz'));
 
-seed = bp_read_seed_from_run_dir( ...
-    'E:/博士文件/工作整理/2026/matlab_gocha_分布式SAR成像/img/run_20260418_215852_seed735816719');
+result = main_gotha_bp(userCfg);
 ```
 
-## notebook 说明
+这五个字段的尺寸和含义要求见 [docs/data_format_contract.md](docs/data_format_contract.md)。
 
-`main_gotha_bp.ipynb` 现在只承担三件事：
+## 你最常改的配置在哪里
 
-- 准备路径
-- 让你在 cell 里编辑 `userCfg`
-- 调用 `main_gotha_bp(userCfg)`
+如果你只是正常做实验，通常只会碰下面这些配置：
 
-如果你要修主流程逻辑，请改 `main_gotha_bp.m`，不要在 notebook 里再维护一份实现。
+| 你要做的事 | 主流程改哪里 | 恢复流程改哪里 |
+|---|---|---|
+| 指定数据目录 | `userCfg.path.dataRoot` | `csCfg.project.path.dataRoot` |
+| 接入自己的数据集 | `userCfg.general.*` | `csCfg.project.general.*` |
+| 调整间断比例/模式 | `userCfg.interruption.*` | `csCfg.project.interruption.*` |
+| 调整成像网格 | `userCfg.image.*` | `csCfg.project.image.*` |
+| 控制显示 | `userCfg.display.*` | `csCfg.project.display.*` |
+| 关闭文件输出 | `userCfg.output.enableOutput` | `csCfg.output.enableOutput` |
+| 调整恢复迭代参数 | 不适用 | `csCfg.recovery.*` |
+| 控制是否跑 1D/2D 恢复 | 不适用 | `csCfg.method.*` |
 
-## 本地辅助脚本
+默认配置文件在：
 
-`open_vscode_matlab_notebook.cmd` 可以作为本机辅助工具使用，但它不是正式实验入口，也不应成为可复现实验的唯一依赖。正式实验请优先使用：
+- [config/default_config.m](config/default_config.m)
+- [cs_echo_recovery/cs_default_config.m](cs_echo_recovery/cs_default_config.m)
 
-- `main_gotha_bp.m`
-- `run_cs_echo_recovery_demo.m`
-- `examples/*.m`
+但正式实验推荐在 `userCfg` 或 `csCfg` 中覆盖，不要直接改默认配置文件。
 
-## 下一步
+## 运行后你会得到什么
 
-Phase 1 完成后，建议继续：
+### 主流程结果
 
-- 固定间断 BP 成像基线
-- 收敛压缩感知恢复链路
-- 建立完整 / 间断 / 恢复三类成像的图像域对比判据
-- 补自动化测试和缩小规模回归用例
+主流程返回的 `result` 里，最常用的是：
+
+- `result.image`  
+  说明：BP 成像结果矩阵
+- `result.interruptionInfo`  
+  说明：本次方位向间断布局、随机种子等元数据
+- `result.pointAnalysis`  
+  说明：点目标分析结果
+- `result.meta.runOutput.runDir`  
+  说明：本次结果输出目录
+
+### 恢复流程结果
+
+恢复流程返回的 `result` 里，最常用的是：
+
+- `result.cases.original`  
+  说明：完整数据成像结果
+- `result.cases.interrupted`  
+  说明：间断数据成像结果
+- `result.cases.recovered_1d` / `result.cases.recovered_2d`  
+  说明：恢复后成像结果
+- `result.paths.runDir`  
+  说明：恢复实验输出目录
+- `result.summary`  
+  说明：本次恢复实验的摘要信息
+
+## 输出目录在哪里
+
+- 主流程输出：工作区根目录下的 `img/`
+- 恢复流程输出：`cs_echo_recovery/results/run_yyyyMMdd_HHmmss/`
+
+如果你只想拿返回值、不想落盘，可以关闭输出总开关：
+
+```matlab
+userCfg.output = struct('enableOutput', false);
+```
+
+或：
+
+```matlab
+csCfg.output = struct('enableOutput', false);
+```
+
+## 仓库地图
+
+下面这些文件是最值得先认识的：
+
+- [main_gotha_bp.m](main_gotha_bp.m)  
+  主流程入口
+- [cs_echo_recovery/run_cs_echo_recovery_demo.m](cs_echo_recovery/run_cs_echo_recovery_demo.m)  
+  恢复流程入口
+- [src/bp_data_pipeline.m](src/bp_data_pipeline.m)  
+  数据入口。负责把原始 `.mat` 数据转成内部统一格式
+- [src/bp_interruption_pipeline.m](src/bp_interruption_pipeline.m)  
+  方位向间断采样逻辑
+- [src/bp_imaging_pipeline.m](src/bp_imaging_pipeline.m)  
+  BP 成像主计算
+- [src/bp_run_point_analysis.m](src/bp_run_point_analysis.m)  
+  点目标分析入口
+- [tests/test_data_pipeline_contract.m](tests/test_data_pipeline_contract.m)  
+  数据契约最小自动化测试
+
+## 常见问题
+
+### 1. 我应该先跑哪个脚本？
+
+先跑主流程 `main_gotha_bp.m`。  
+只有主流程跑通以后，再继续看恢复流程。
+
+### 2. 我想换实验参数，应该改哪里？
+
+优先改 `userCfg` 或 `csCfg`。  
+不要为了改一个实验参数直接去改 `default_config.m` 或算法源码。
+
+### 3. 我有自己的数据集，最先该确认什么？
+
+先确认三件事：
+
+1. `.mat` 文件名模式是什么
+2. 顶层变量名是什么
+3. 轨迹、回波、频率字段分别叫什么
+
+然后按 [docs/data_format_contract.md](docs/data_format_contract.md) 中的模板填 `userCfg.general`。
+
+### 4. 如果运行直接报错，先看哪里？
+
+优先看：
+
+1. 报错标识符，例如 `bp_data_pipeline:MissingDatasetFields`
+2. 报错文件路径
+3. 你传入的 `userCfg` / `csCfg`
+4. [docs/config_contract.md](docs/config_contract.md) 和 [docs/data_format_contract.md](docs/data_format_contract.md)
+
+## 当前版本明确不做
+
+- GUI 图形界面
+- Python 重写
+- 在线服务化 / Web API
+
+## 下一步建议
+
+如果你现在刚把项目跑通，推荐下一步做下面三件事：
+
+1. 先固定一组可复现的间断 BP 基线结果
+2. 再调压缩感知恢复参数，让恢复后图像主瓣尽量接近完整数据
+3. 用点目标分析和图像对比一起判断恢复是否真的改进

@@ -21,6 +21,11 @@ end
 end
 
 function runOutput = localPrepareRunDir(cfg, context, cutInfo)
+if ~localIsOutputEnabled(cfg)
+    runOutput = localEmptyRunOutput();
+    return;
+end
+
 baseDir = fullfile(context.workspaceRoot, cfg.output.outputDirName);
 localEnsureDir(baseDir);
 
@@ -55,6 +60,10 @@ end
 
 function savedFile = localSaveInterruption(cutInfo, config, runDir)
 savedFile = struct('textFile', '', 'imageFile', '');
+if ~localIsOutputEnabled(config) || isempty(runDir)
+    return;
+end
+
 localEnsureDir(runDir);
 
 if localShouldSave(config, 'saveInterruptionText', true)
@@ -69,6 +78,11 @@ end
 end
 
 function outputFile = localSaveImage(imgBP, cfg, outputDir)
+if ~localIsOutputEnabled(cfg) || isempty(outputDir)
+    outputFile = '';
+    return;
+end
+
 localEnsureDir(outputDir);
 
 baseName = sprintf('%s_%s_%d_%g', ...
@@ -103,6 +117,10 @@ savedFile = struct( ...
         'contour', '', ...
         'rangeProfile', '', ...
         'azimuthProfile', ''));
+if ~localIsOutputEnabled(config) || isempty(runDir)
+    return;
+end
+
 localEnsureDir(runDir);
 
 if config.output.savePointAnalysisMat
@@ -132,10 +150,26 @@ if isstruct(config) && isfield(config, 'output') ...
         && isstruct(config.output) && isfield(config.output, fieldName)
     tf = config.output.(fieldName);
 end
+tf = localIsOutputEnabled(config) && tf;
 end
 
 function tf = localShouldSavePointImages(config)
 tf = localShouldSave(config, 'savePointAnalysisImage', false);
+end
+
+function tf = localIsOutputEnabled(config)
+tf = true;
+if isstruct(config) && isfield(config, 'output') ...
+        && isstruct(config.output) && isfield(config.output, 'enableOutput')
+    tf = config.output.enableOutput;
+end
+end
+
+function runOutput = localEmptyRunOutput()
+runOutput = struct( ...
+    'baseDir', '', ...
+    'runDir', '', ...
+    'runName', '');
 end
 
 function localWriteInterruptionSummary(filePath, cutInfo)

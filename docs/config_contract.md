@@ -1,244 +1,253 @@
-# 配置契约说明
+# 配置修改指南
 
-本项目的正式配置契约适用于两个入口：
+这份文档回答的是一个很实际的问题：  
+当你想改实验参数时，到底应该改哪里，哪些改法是正式做法，哪些改法会被项目立即拒绝。
 
-- `main_gotha_bp.m`
-- `cs_echo_recovery/run_cs_echo_recovery_demo.m`
+## 1. 先记住一条总原则
 
-核心原则只有一条：**实验参数通过配置覆盖调整，不通过修改生产源码调整。**
+正式实验里，参数应当通过配置覆盖传入，而不是直接修改生产源码。
 
-## 1. 严格失败语义
+也就是说，优先改：
 
-配置覆盖采用严格失败策略：
+- `userCfg`
+- `csCfg`
 
-- 未知字段立即报错
-- 错拼字段立即报错
-- 错误层级立即报错
-- 不会静默忽略配置
-- 不会自动回退成“看起来还能跑”的宽松模式
-
-错误信息必须同时包含：
-
-- 错误位置
-- 错误原因
-
-例如：
-
-- `cfg.display.showProgess`
-  说明：字段名拼错，程序会明确指出该路径不存在。
-- `cfg.display = true`
-  说明：默认这里是结构体，若用户用标量覆盖，会被识别为层级类型不匹配。
-
-## 2. 主流程配置覆盖
-
-主流程入口：
-
-```matlab
-result = main_gotha_bp(userCfg);
-```
-
-最常用的主流程覆盖位置包括：
-
-- `userCfg.path`
-- `userCfg.interruption`
-- `userCfg.display`
-- `userCfg.analysis`
-- `userCfg.output`
-
-### 合法示例
-
-```matlab
-userCfg = struct();
-userCfg.path = struct('dataRoot', 'E:/path/to/gotcha_BP');
-userCfg.display = struct('showProgress', true);
-userCfg.analysis = struct('pointAnaCfg', struct('showFigures', true));
-
-result = main_gotha_bp(userCfg);
-```
-
-### 非法示例：错拼字段
-
-```matlab
-userCfg = struct();
-userCfg.display = struct('showProgess', true);
-
-result = main_gotha_bp(userCfg);
-```
-
-期望行为：
-
-- 立即失败
-- 错误路径包含 `cfg.display.showProgess`
-
-### 非法示例：错误层级
-
-```matlab
-userCfg = struct();
-userCfg.display = true;
-
-result = main_gotha_bp(userCfg);
-```
-
-期望行为：
-
-- 立即失败
-- 错误原因说明默认值是 `struct`，用户覆盖不是 `struct`
-
-## 3. 恢复流程配置覆盖
-
-恢复入口：
-
-```matlab
-result = run_cs_echo_recovery_demo(csCfg);
-```
-
-恢复流程配置由两部分组成：
-
-1. `csCfg.project`
-   说明：传递给主流程的配置覆盖，例如数据路径、间断参数、显示参数。
-2. `csCfg.method / compare / recovery / data / output`
-   说明：恢复模块自身的配置。
-
-### 合法示例
-
-```matlab
-csCfg = struct();
-csCfg.project = struct( ...
-    'path', struct('dataRoot', 'E:/path/to/gotcha_BP'));
-csCfg.method = struct('run1D', true, 'run2D', false);
-
-result = run_cs_echo_recovery_demo(csCfg);
-```
-
-### 非法示例：顶层错拼字段
-
-```matlab
-csCfg = struct();
-csCfg.methd = struct('run1D', false);
-
-result = run_cs_echo_recovery_demo(csCfg);
-```
-
-期望行为：
-
-- 立即失败
-- 错误路径包含 `cfg.methd`
-
-## 4. 数据路径规则
-
-现在的数据路径解析顺序是：
-
-1. `cfg.path.dataRoot`
-2. `cfg.path.dataRootCandidates`
-
-解释如下：
-
-- 如果 `cfg.path.dataRoot` 非空，则优先使用它。
-- 如果显式路径错误，不会回退到 `dataRootCandidates`。
-- 只有 `cfg.path.dataRoot` 为空时，才会启用候选目录查找。
-
-### 推荐写法
-
-```matlab
-userCfg = struct();
-userCfg.path = struct('dataRoot', 'E:/path/to/gotcha_BP');
-```
-
-### 显式路径错误时的期望行为
-
-```matlab
-userCfg = struct();
-userCfg.path = struct('dataRoot', 'definitely_missing_path');
-```
-
-期望行为：
-
-- 立即失败
-- 错误信息指出显式路径
-- 错误信息指出缺失的首个必需文件
-- 错误信息说明不会回退到 `cfg.path.dataRootCandidates`
-
-## 5. headless 默认值
-
-正式主流程默认值现在偏向批处理：
-
-- `config.display.showInterruptedEcho = false`
-- `config.display.showProgress = false`
-- `config.analysis.pointAnaCfg.showFigures = false`
-
-这不影响正式输出的保存：
-
-- 成像图仍可保存
-- 点目标分析文本仍可保存
-- 点目标分析图片在 `savePointAnalysisImage=true` 时仍可保存
-
-如果你在 notebook 或手工调试时需要看图，可以显式打开：
-
-```matlab
-userCfg = struct();
-userCfg.display = struct( ...
-    'showInterruptedEcho', true, ...
-    'showProgress', true);
-userCfg.analysis = struct( ...
-    'pointAnaCfg', struct('showFigures', true));
-```
-
-## 6. notebook 的角色
-
-`main_gotha_bp.ipynb` 只是交互式 wrapper：
-
-- 准备路径
-- 允许你在 cell 里编辑 `userCfg`
-- 调用 `main_gotha_bp(userCfg)`
-
-不要在 notebook 中再维护一份主流程函数体。正式逻辑只能保留在：
-
-- `main_gotha_bp.m`
-
-## 7. 产物与版本控制
-
-运行产物默认不纳入版本控制：
-
-- `/img/`
-- `/cs_echo_recovery/results/`
-
-应纳入版本控制的是：
-
-- 代码
-- 文档
-- 默认配置
-- 最小示例
-
-不应作为日常提交内容的是：
-
-- 大量 `.mat`
-- 大量 `.jpg`
-- 大量 `.txt` 实验输出
-
-## 8. 推荐工作流
-
-### 主流程
-
-1. 构造 `userCfg`
-2. 显式设置 `userCfg.path.dataRoot`
-3. 用覆盖字段调整实验参数
-4. 调用 `main_gotha_bp(userCfg)`
-
-### 恢复流程
-
-1. 构造 `csCfg`
-2. 在 `csCfg.project.path.dataRoot` 中设置数据根目录
-3. 在 `csCfg.project` 中覆盖主流程参数
-4. 在 `csCfg.recovery / method / compare / data / output` 中覆盖恢复参数
-5. 调用 `run_cs_echo_recovery_demo(csCfg)`
-
-## 9. 一条底线
-
-如果你发现自己准备直接修改：
+不优先改：
 
 - `config/default_config.m`
 - `cs_echo_recovery/cs_default_config.m`
 - `main_gotha_bp.m`
-- `run_cs_echo_recovery_demo.m`
+- `cs_echo_recovery/run_cs_echo_recovery_demo.m`
 
-只是为了换一个实验参数，那通常说明你没有先走配置覆盖这条正式路径。优先把调整写进 `userCfg` 或 `csCfg`。
+默认配置文件的角色是“项目默认 schema”，不是“每次实验都去手改的参数文件”。
+
+## 2. 配置从哪里进入项目
+
+项目有两个正式入口，对应两套覆盖入口：
+
+### 主流程
+
+```matlab
+result = main_gotha_bp(userCfg);
+```
+
+这里的 `userCfg` 会覆盖 `config/default_config.m` 中的默认值。
+
+### 恢复流程
+
+```matlab
+result = run_cs_echo_recovery_demo(csCfg);
+```
+
+这里的 `csCfg` 分两层：
+
+1. `csCfg.project`
+   说明：传给主流程的配置覆盖
+2. `csCfg.method / recovery / compare / data / output`
+   说明：恢复流程自己使用的配置
+
+可以把它简单理解成：
+
+- `csCfg.project` 管“主流程怎么跑”
+- `csCfg.recovery` 管“恢复算法怎么跑”
+
+## 3. 你最常改的字段
+
+下面这张表对应最常见的实验需求。
+
+| 你要做的事 | 主流程怎么改 | 恢复流程怎么改 |
+|---|---|---|
+| 指定数据目录 | `userCfg.path.dataRoot` | `csCfg.project.path.dataRoot` |
+| 接入自定义数据集 | `userCfg.general.*` | `csCfg.project.general.*` |
+| 调整间断方式 | `userCfg.interruption.*` | `csCfg.project.interruption.*` |
+| 调整图像大小 | `userCfg.image.*` | `csCfg.project.image.*` |
+| 关闭文件输出 | `userCfg.output.enableOutput` | `csCfg.output.enableOutput` |
+| 打开图窗显示 | `userCfg.display.*` | `csCfg.project.display.*` |
+| 调整恢复迭代次数 | 不适用 | `csCfg.recovery.maxIter` |
+| 只跑 1D 或 2D 恢复 | 不适用 | `csCfg.method.run1D / run2D` |
+
+## 4. 最推荐的写法
+
+### 主流程推荐模板
+
+```matlab
+userCfg = struct();
+userCfg.path = struct('dataRoot', 'E:/path/to/your_dataset_root');
+
+result = main_gotha_bp(userCfg);
+```
+
+如果要调更多参数，就继续往 `userCfg` 里补字段：
+
+```matlab
+userCfg = struct();
+userCfg.path = struct('dataRoot', 'E:/path/to/your_dataset_root');
+userCfg.interruption = struct( ...
+    'mode', 'random_gap', ...
+    'numSegments', 5, ...
+    'missingRatio', 0.07, ...
+    'randomSeed', 42);
+userCfg.output = struct('enableOutput', true);
+
+result = main_gotha_bp(userCfg);
+```
+
+### 恢复流程推荐模板
+
+```matlab
+csCfg = struct();
+csCfg.project = struct( ...
+    'path', struct('dataRoot', 'E:/path/to/your_dataset_root'));
+csCfg.method = struct( ...
+    'run1D', true, ...
+    'run2D', false);
+csCfg.recovery = struct( ...
+    'maxIter', 200, ...
+    'lambda1D', 0.01);
+
+result = run_cs_echo_recovery_demo(csCfg);
+```
+
+## 5. 严格失败语义是什么意思
+
+本项目对配置采用严格失败策略。  
+这不是“麻烦”，而是为了减少科研实验里那种“参数没生效但你自己没发现”的风险。
+
+严格失败意味着：
+
+- 未知字段立即报错
+- 错拼字段立即报错
+- 层级不对立即报错
+- 不会静默忽略
+- 不会偷偷回退到某个宽松默认行为
+
+## 6. 哪些写法会被立即拒绝
+
+### 情况 A：字段名拼错
+
+```matlab
+userCfg = struct();
+userCfg.display = struct('showProgess', true);
+```
+
+这里 `showProgess` 拼错了。  
+正确字段是 `showProgress`。
+
+### 情况 B：层级放错
+
+```matlab
+userCfg = struct();
+userCfg.display = true;
+```
+
+这里 `display` 应该是一个结构体，不是单个逻辑值。
+
+### 情况 C：恢复流程顶层字段拼错
+
+```matlab
+csCfg = struct();
+csCfg.methd = struct('run1D', false);
+```
+
+这里 `methd` 拼错了。  
+正确字段是 `method`。
+
+### 情况 D：只给了半套自定义数据契约
+
+```matlab
+userCfg = struct();
+userCfg.general = struct( ...
+    'dataFieldMap', struct('echo', 'echo_matrix'));
+```
+
+这会失败，因为 `dataFieldMap` 必须至少包含：
+
+- `x`
+- `y`
+- `z`
+- `echo`
+- `freq`
+
+## 7. 路径配置怎么理解
+
+数据路径解析顺序固定如下：
+
+1. `cfg.path.dataRoot`
+2. `cfg.path.dataRootCandidates`
+
+解释：
+
+- 如果你显式提供了 `dataRoot`，项目只会相信这个路径
+- 如果这个路径不对，项目会立即报错
+- 它不会再自动去猜别的目录
+- 只有当 `dataRoot` 为空时，才会遍历候选目录
+
+因此，正式实验最推荐的写法始终是：
+
+```matlab
+userCfg.path = struct('dataRoot', 'E:/path/to/your_dataset_root');
+```
+
+## 8. 自定义数据集应该改哪里
+
+如果你的数据不是默认 GOTCHA 格式，需要改下面这些字段：
+
+- `general.numDataFiles`
+- `general.dataFilePattern`
+- `general.dataVariableName`
+- `general.dataFieldMap`
+
+主流程写在：
+
+```matlab
+userCfg.general = struct(...);
+```
+
+恢复流程写在：
+
+```matlab
+csCfg.project.general = struct(...);
+```
+
+字段具体怎么填，见 [data_format_contract.md](data_format_contract.md)。
+
+## 9. 几个很有用的配置习惯
+
+### 习惯 1：先只改最少字段
+
+第一次跑项目时，先只改：
+
+- `path.dataRoot`
+
+如果是自定义数据集，再加：
+
+- `general.*`
+
+不要一开始就同时调很多参数。
+
+### 习惯 2：把实验差异都写进 `userCfg` / `csCfg`
+
+这样你以后回看脚本时，一眼就知道这次实验和默认配置差在哪里。
+
+### 习惯 3：先让主流程稳定，再调恢复参数
+
+恢复流程更长，出问题时更难定位。  
+先保证主流程输出稳定，后面调恢复会轻松很多。
+
+## 10. 什么时候应该看默认配置文件
+
+默认配置文件更适合拿来做三件事：
+
+1. 查当前项目支持哪些字段
+2. 查某个字段的默认值
+3. 理解配置树长什么样
+
+对应文件是：
+
+- [../config/default_config.m](../config/default_config.m)
+- [../cs_echo_recovery/cs_default_config.m](../cs_echo_recovery/cs_default_config.m)
+
+## 11. 如果你只想记住一句话
+
+每次实验都新建或修改 `userCfg` / `csCfg`，不要为了改参数直接改算法源码。  
+如果项目拒绝你的配置，优先相信报错信息，因为它通常已经指出了真实问题所在。
